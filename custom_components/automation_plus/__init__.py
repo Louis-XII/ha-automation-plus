@@ -2,17 +2,18 @@
 
 from pathlib import Path
 
+from homeassistant.components.frontend import async_remove_panel
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.components.panel_custom import async_register_panel
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.typing import ConfigType
 
 from .const import DOMAIN, FRONTEND_JS, PANEL_ICON, PANEL_TITLE, PANEL_URL
 
 STATIC_PATH = f"/{DOMAIN}_static"
 
 
-async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Enregistre les fichiers statiques du panel et l'ajoute à la sidebar."""
     frontend_dir = Path(__file__).parent / "frontend"
 
@@ -30,4 +31,10 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         require_admin=True,
     )
 
+    return True
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Retire le panel de la sidebar."""
+    async_remove_panel(hass, PANEL_URL)
     return True

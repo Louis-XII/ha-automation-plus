@@ -1,0 +1,11 @@
+{
+  "domain": "automation_plus",
+  "name": "AutomationPlus",
+  "version": "0.1.0",
+  "documentation": "https://github.com/Louis-XII/ha-automation-plus",
+  "issue_tracker": "https://github.com/Louis-XII/ha-automation-plus/issues",
+  "codeowners": ["@Louis-XII"],
+  "config_flow": false,
+  "iot_class": "local_push",
+  "requirements": []
+}

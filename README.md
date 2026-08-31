@@ -5,10 +5,14 @@ directement dans la sidebar de HA.
 
 ## Statut
 
-🚧 v0.2.0 — installation via config flow (Paramètres → Appareils et
-services → Ajouter une intégration). Panel toujours minimal, aucune gestion
-réelle des automatisations pour l'instant.
+🚧 v0.3.0 — panel doté d'un header (retour vers HA, badge version, accès
+issues GitHub) et d'une toolbar (recherche, regroupement par catégorie/
+état/label, création d'automatisation). Aucune gestion réelle des
+automatisations pour l'instant — la liste et l'édition arrivent dans une
+prochaine version.
 
+- v0.2.0 — installation via config flow (Paramètres → Appareils et
+  services → Ajouter une intégration).
 - v0.1 — squelette minimal validant le mécanisme `panel_custom` depuis une
   custom integration. Activation manuelle via `automation_plus:` dans
   `configuration.yaml`.

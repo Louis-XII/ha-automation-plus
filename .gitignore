@@ -9,3 +9,9 @@ secrets.yaml
 
 # Suivi de projet interne (privé, non distribué)
 claude-integration/
+
+# Fichiers de design Pencil
+*.pen
+
+# Suivi UI/design interne (privé, non distribué)
+pen-ui-integration/

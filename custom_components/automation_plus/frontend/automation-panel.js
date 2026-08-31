@@ -4,7 +4,7 @@
 
 // Infos de debug affichées dans le badge du header — pas de pipeline de build
 // pour l'instant, donc à tenir à jour manuellement en même temps que manifest.json.
-const DEBUG_VERSION = "0.3.0";
+const DEBUG_VERSION = "0.3.1";
 const DEBUG_BUILD_DATE = "2026-08-31";
 
 const REPO_URL = "https://github.com/Louis-XII/ha-automation-plus";

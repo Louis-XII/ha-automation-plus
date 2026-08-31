@@ -1,0 +1,45 @@
+name: "✨ Nouvelle Fonctionnalité"
+description: "Proposer une amélioration pour l'intégration ou le panel"
+title: "[FEATURE] "
+labels: ["✨ Feature"]
+body:
+  - type: dropdown
+    id: composant
+    attributes:
+      label: "Composant concerné"
+      options:
+        - "🐍 Backend Python (custom_components/automation_plus)"
+        - "🎨 Panel frontend (automation-panel.js)"
+        - "🧩 HACS / manifest"
+    validations:
+      required: true
+  - type: dropdown
+    id: priorite
+    attributes:
+      label: "Priorité"
+      options:
+        - "🚨 Urgente"
+        - "🟡 Normale"
+        - "🟢 Basse"
+    validations:
+      required: false
+  - type: textarea
+    id: besoin
+    attributes:
+      label: "Le besoin / L'idée"
+      description: "Quelle nouveauté voulez-vous ajouter ?"
+      placeholder: "Ex: Permettre l'édition d'une automatisation directement depuis le panel..."
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: "La solution technique (Optionnel)"
+      description: "Avez-vous déjà une idée de comment l'implémenter (API HA, endpoint, composant JS) ?"
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: "Vérifications"
+      options:
+        - label: "Le design (UI) est défini"
+        - label: "L'API HA nécessaire est identifiée (REST/WebSocket)"

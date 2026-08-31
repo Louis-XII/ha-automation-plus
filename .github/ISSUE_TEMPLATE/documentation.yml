@@ -1,0 +1,21 @@
+name: "📝 Documentation"
+description: "Mettre à jour le README, le CHANGELOG interne ou la doc d'installation"
+title: "[DOC] "
+labels: ["📝 Doc"]
+body:
+  - type: textarea
+    id: sujet
+    attributes:
+      label: "Sujet à documenter"
+      description: "Sur quoi devez-vous écrire ou prendre des notes ?"
+      placeholder: "Ex: Documenter la procédure de release HACS..."
+    validations:
+      required: true
+  - type: checkboxes
+    id: destination
+    attributes:
+      label: "Où cette documentation sera-t-elle stockée ?"
+      options:
+        - label: "Dans le README.md / info.md (public)"
+        - label: "Dans claude-integration/ (suivi interne)"
+        - label: "En commentaire directement dans le code"

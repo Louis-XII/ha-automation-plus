@@ -1,0 +1,28 @@
+name: "🎨 Idée UI / Design"
+description: "Proposer une amélioration visuelle ou d'expérience pour le panel"
+title: "[UI] "
+labels: ["🎨 Design UI"]
+body:
+  - type: dropdown
+    id: priorite
+    attributes:
+      label: "Priorité"
+      options:
+        - "🚨 Urgente"
+        - "🟡 Normale"
+        - "🟢 Basse"
+    validations:
+      required: false
+  - type: textarea
+    id: idee
+    attributes:
+      label: "L'idée"
+      description: "Quel élément d'interface voulez-vous ajouter ou modifier ?"
+      placeholder: "Ex: Ajouter un filtre par état (activé/désactivé) en haut du panel..."
+    validations:
+      required: true
+  - type: textarea
+    id: reference
+    attributes:
+      label: "Référence visuelle (Optionnel)"
+      description: "Maquette, capture d'écran, lien vers un fichier .pen, ou exemple d'une autre intégration."

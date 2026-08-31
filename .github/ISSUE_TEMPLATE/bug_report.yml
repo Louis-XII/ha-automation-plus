@@ -1,0 +1,53 @@
+name: "🐛 Signaler un Bug"
+description: "Créer un ticket pour un problème (Panel, Intégration Python, ou HACS)"
+title: "[BUG] "
+labels: ["🐛 Bug"]
+body:
+  - type: dropdown
+    id: composant
+    attributes:
+      label: "Composant concerné"
+      options:
+        - "🐍 Backend Python (custom_components/automation_plus)"
+        - "🎨 Panel frontend (automation-panel.js)"
+        - "🧩 HACS / manifest / installation"
+    validations:
+      required: true
+  - type: dropdown
+    id: origine
+    attributes:
+      label: "Origine du bug"
+      description: "Qui a constaté le problème ?"
+      options:
+        - "🧑‍💻 Dev (moi)"
+        - "🧪 Testeur"
+        - "👤 Utilisateur final (HACS)"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: "Description du bug"
+      description: "Que se passe-t-il exactement ?"
+      placeholder: "Le panel reste vide alors que des automatisations existent..."
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: "Étapes pour reproduire"
+      description: "Comment déclencher ce bug à coup sûr ?"
+      value: |
+        1. Installer l'intégration
+        2. Ouvrir le panel...
+        3. Cliquer sur...
+  - type: textarea
+    id: logs
+    attributes:
+      label: "Logs ou Captures d'écran"
+      description: "Copiez/collez ici les logs Home Assistant (Paramètres > Système > Journaux), la console navigateur, ou glissez une image."
+  - type: input
+    id: version
+    attributes:
+      label: "Version de l'intégration / HA"
+      placeholder: "AutomationPlus v0.2.0 — Home Assistant 2026.8"

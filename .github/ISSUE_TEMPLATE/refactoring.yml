@@ -1,0 +1,31 @@
+name: "♻️ Refactoring (Optimisation)"
+description: "Améliorer le code existant sans changer son comportement"
+title: "[REFACTO] "
+labels: ["♻️ Refactoring"]
+body:
+  - type: dropdown
+    id: composant
+    attributes:
+      label: "Code concerné"
+      options:
+        - "🐍 Backend Python (custom_components/automation_plus)"
+        - "🎨 Panel frontend (automation-panel.js)"
+    validations:
+      required: true
+  - type: dropdown
+    id: priorite
+    attributes:
+      label: "Priorité"
+      options:
+        - "🚨 Urgente"
+        - "🟡 Normale"
+        - "🟢 Basse"
+    validations:
+      required: false
+  - type: textarea
+    id: objectif
+    attributes:
+      label: "Objectif de l'optimisation"
+      description: "Que cherchez-vous à améliorer ? (ex: lisibilité, découplage panel/API, gestion d'erreurs)"
+    validations:
+      required: true

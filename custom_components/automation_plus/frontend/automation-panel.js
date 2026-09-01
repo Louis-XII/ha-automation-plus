@@ -4,12 +4,12 @@
 
 // Infos de debug affichées dans le badge du header — pas de pipeline de build
 // pour l'instant, donc à tenir à jour manuellement en même temps que manifest.json.
-const DEBUG_VERSION = "0.3.1";
-const DEBUG_BUILD_DATE = "2026-08-31";
+const DEBUG_VERSION = "0.3.2";
+const DEBUG_BUILD_DATE = "2026-09-01";
 
 const REPO_URL = "https://github.com/Louis-XII/ha-automation-plus";
 const ISSUES_URL = `${REPO_URL}/issues`;
-const COMMITS_URL = `${REPO_URL}/commits/main`;
+const RELEASES_URL = `${REPO_URL}/releases`;
 
 const GROUP_OPTIONS = [
   { id: "none", label: "Ne pas regrouper" },
@@ -73,6 +73,12 @@ class AutomationPlusPanel extends HTMLElement {
       .map((label) => `<span class="chip" style="--chip-color:${escapeHtml(label.color || "#666")}">${escapeHtml(label.name)}</span>`)
       .join("");
     return `<div class="chips">${chips}</div>`;
+  }
+
+  _groupLabel() {
+    const option = GROUP_OPTIONS.find((item) => item.id === this._groupBy);
+    if (!option || option.id === "none") return "Regrouper";
+    return `Regroupé par ${option.label.toLowerCase()}`;
   }
 
   _renderGroupMenu() {
@@ -265,7 +271,7 @@ class AutomationPlusPanel extends HTMLElement {
           color: var(--primary-text-color, #212121);
         }
         .fab {
-          position: absolute;
+          position: fixed;
           right: 32px;
           bottom: 32px;
           width: 56px;
@@ -322,7 +328,7 @@ class AutomationPlusPanel extends HTMLElement {
             ${this._icon(ICON_ARROW_LEFT, 22)}
           </button>
           <h1>AutomationPlus</h1>
-          <a class="version-badge" href="${COMMITS_URL}" target="_blank" rel="noopener noreferrer" title="Voir l'historique des commits sur GitHub">v${DEBUG_VERSION} · ${DEBUG_BUILD_DATE}</a>
+          <a class="version-badge" href="${RELEASES_URL}" target="_blank" rel="noopener noreferrer" title="Voir les releases sur GitHub">v${DEBUG_VERSION} · ${DEBUG_BUILD_DATE}</a>
         </div>
         <div class="header-actions">
           <button class="icon-button" title="Signaler un bug" onclick="window.open('${ISSUES_URL}', '_blank', 'noopener,noreferrer')">
@@ -344,7 +350,7 @@ class AutomationPlusPanel extends HTMLElement {
         <div class="regroup-wrap">
           <button class="regroup-btn">
             ${this._icon(ICON_LAYERS, 16)}
-            <span>Regrouper</span>
+            <span>${this._groupLabel()}</span>
             ${this._icon(ICON_CHEVRON_DOWN, 14)}
           </button>
           ${this._renderGroupMenu()}

@@ -18,6 +18,12 @@ const GROUP_OPTIONS = [
   { id: "label", label: "Label" },
 ];
 
+const STATUS_FILTERS = [
+  { id: "all", label: "Toutes" },
+  { id: "on", label: "Activées" },
+  { id: "off", label: "Désactivées" },
+];
+
 // Icônes en SVG inline (pas de dépendance CDN — le panel doit fonctionner
 // sans accès internet sur une instance HA locale).
 const ICON_ARROW_LEFT = `<path d="M19 12H5"/><path d="m12 19-7-7 7-7"/>`;
@@ -42,6 +48,7 @@ class AutomationPlusPanel extends HTMLElement {
   constructor() {
     super();
     this._filterText = "";
+    this._statusFilter = "all";
     this._groupBy = "none";
     this._groupMenuOpen = false;
     this._createPopupOpen = false;
@@ -65,6 +72,14 @@ class AutomationPlusPanel extends HTMLElement {
 
   _icon(paths, size = 16) {
     return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
+  }
+
+  _renderStatusFilters() {
+    const chips = STATUS_FILTERS.map((filter) => {
+      const active = filter.id === this._statusFilter;
+      return `<button class="status-chip${active ? " active" : ""}" data-value="${filter.id}">${filter.label}</button>`;
+    }).join("");
+    return `<div class="status-filters">${chips}</div>`;
   }
 
   _renderChips() {
@@ -256,6 +271,28 @@ class AutomationPlusPanel extends HTMLElement {
           align-items: center;
           gap: 6px;
         }
+        .status-filters {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-left: auto;
+        }
+        .status-chip {
+          border: none;
+          border-radius: 14px;
+          padding: 6px 12px;
+          font-size: 12px;
+          font-weight: 400;
+          font-family: inherit;
+          cursor: pointer;
+          background: var(--secondary-background-color, #f1f3f4);
+          color: var(--secondary-text-color, #666);
+        }
+        .status-chip.active {
+          background: var(--primary-text-color, #212121);
+          color: var(--card-background-color, #fff);
+          font-weight: 700;
+        }
         .chip {
           font-size: 11px;
           padding: 3px 9px;
@@ -356,6 +393,7 @@ class AutomationPlusPanel extends HTMLElement {
           ${this._renderGroupMenu()}
         </div>
         ${this._renderChips()}
+        ${this._renderStatusFilters()}
       </div>
       <div class="body">
         <p>Panel connecté — ${entityCount} entités visibles.</p>
@@ -403,6 +441,13 @@ class AutomationPlusPanel extends HTMLElement {
         this._render();
       });
     }
+
+    root.querySelectorAll(".status-chip").forEach((chip) => {
+      chip.addEventListener("click", () => {
+        this._statusFilter = chip.dataset.value;
+        this._render();
+      });
+    });
 
     const fab = root.querySelector(".fab");
     if (fab) {

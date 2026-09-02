@@ -4,8 +4,8 @@
 
 // Infos de debug affichées dans le badge du header — pas de pipeline de build
 // pour l'instant, donc à tenir à jour manuellement en même temps que manifest.json.
-const DEBUG_VERSION = "0.3.2";
-const DEBUG_BUILD_DATE = "2026-09-01";
+const DEBUG_VERSION = "0.4.0";
+const DEBUG_BUILD_DATE = "2026-09-02";
 
 const REPO_URL = "https://github.com/Louis-XII/ha-automation-plus";
 const ISSUES_URL = `${REPO_URL}/issues`;
@@ -15,8 +15,17 @@ const GROUP_OPTIONS = [
   { id: "none", label: "Ne pas regrouper" },
   { id: "category", label: "Catégorie" },
   { id: "state", label: "État" },
-  { id: "label", label: "Label" },
+  { id: "label", label: "Étiquette" },
 ];
+
+const STATUS_FILTERS = [
+  { id: "all", label: "Toutes" },
+  { id: "on", label: "Activées" },
+  { id: "off", label: "Désactivées" },
+];
+
+// Couleur de repli pour une étiquette HA sans couleur définie.
+const DEFAULT_LABEL_COLOR = "#6b7280";
 
 // Icônes en SVG inline (pas de dépendance CDN — le panel doit fonctionner
 // sans accès internet sur une instance HA locale).
@@ -29,6 +38,8 @@ const ICON_LAYERS = `<path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 
 const ICON_CHEVRON_DOWN = `<path d="m6 9 6 6 6-6"/>`;
 const ICON_CHECK = `<path d="M20 6 9 17l-5-5"/>`;
 const ICON_PLUS = `<path d="M5 12h14"/><path d="M12 5v14"/>`;
+const ICON_FOLDER = `<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>`;
+const ICON_MAP_PIN = `<path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/>`;
 
 function escapeHtml(value) {
   return String(value)
@@ -42,18 +53,28 @@ class AutomationPlusPanel extends HTMLElement {
   constructor() {
     super();
     this._filterText = "";
+    this._statusFilter = "all";
+    this._activeLabelFilter = null;
     this._groupBy = "none";
     this._groupMenuOpen = false;
-    this._createPopupOpen = false;
-    // Vrais labels HA (label_registry) — vide tant que le backend ne les
-    // expose pas encore au panel. La rangée de chips ne s'affiche que si
-    // ce tableau est rempli, jamais de labels fictifs codés en dur ici.
-    this._labels = [];
+
+    // Registres HA (entity/area/label/category) — chargés une seule fois
+    // par connexion hass via WebSocket, voir _loadRegistries().
+    this._entityRegistryByEntityId = new Map();
+    this._areaRegistry = new Map();
+    this._labelRegistry = new Map();
+    this._categoryRegistry = new Map();
+    this._registriesLoaded = false;
+    this._registriesLoading = false;
   }
 
   set hass(value) {
+    const isFirstAssignment = !this._hass;
     this._hass = value;
     this._render();
+    if (isFirstAssignment) {
+      this._loadRegistries();
+    }
   }
 
   connectedCallback() {
@@ -63,14 +84,159 @@ class AutomationPlusPanel extends HTMLElement {
     this._render();
   }
 
+  // Charge une seule fois les registres HA nécessaires pour enrichir la
+  // liste des automatisations (pièce, catégorie, étiquettes) — hass.states
+  // seul ne donne que le nom et l'état on/off.
+  async _loadRegistries() {
+    if (!this._hass || this._registriesLoading) return;
+    this._registriesLoading = true;
+    try {
+      const [entities, areas, labels, categories] = await Promise.all([
+        this._hass.callWS({ type: "config/entity_registry/list" }),
+        this._hass.callWS({ type: "config/area_registry/list" }),
+        this._hass.callWS({ type: "config/label_registry/list" }),
+        this._hass.callWS({ type: "config/category_registry/list", scope: "automation" }),
+      ]);
+      this._entityRegistryByEntityId = new Map(entities.map((entry) => [entry.entity_id, entry]));
+      this._areaRegistry = new Map(areas.map((area) => [area.area_id, area]));
+      this._labelRegistry = new Map(labels.map((label) => [label.label_id, label]));
+      this._categoryRegistry = new Map(categories.map((category) => [category.category_id, category]));
+      this._registriesLoaded = true;
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("AutomationPlus: échec du chargement des registres HA", err);
+    } finally {
+      this._registriesLoading = false;
+      this._render();
+    }
+  }
+
   _icon(paths, size = 16) {
     return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
   }
 
+  // Construit la liste des automatisations à partir de hass.states, enrichie
+  // avec les registres (pièce, catégorie, étiquettes). Ne dépend pas du mode
+  // de stockage choisi dans Réglages (fichier standard / dossier dédié) :
+  // hass.states reflète toujours ce que HA a chargé, quelle que soit la source.
+  _getAutomations() {
+    if (!this._hass) return [];
+    return Object.values(this._hass.states)
+      .filter((stateObj) => stateObj.entity_id.startsWith("automation."))
+      .map((stateObj) => {
+        const entry = this._entityRegistryByEntityId.get(stateObj.entity_id);
+        const areaId = entry ? entry.area_id : null;
+        const categoryId = entry && entry.categories ? entry.categories.automation : null;
+        const labelIds = entry ? entry.labels || [] : [];
+        const area = areaId ? this._areaRegistry.get(areaId) : null;
+        const category = categoryId ? this._categoryRegistry.get(categoryId) : null;
+        const labels = labelIds
+          .map((id) => this._labelRegistry.get(id))
+          .filter(Boolean)
+          .map((label) => ({ id: label.label_id, name: label.name, color: label.color }));
+        return {
+          entity_id: stateObj.entity_id,
+          name: (stateObj.attributes && stateObj.attributes.friendly_name) || stateObj.entity_id,
+          state: stateObj.state,
+          area: area ? area.name : null,
+          category: category ? category.name : null,
+          labels,
+        };
+      });
+  }
+
+  // Étiquettes réellement utilisées par au moins une automatisation, pour la
+  // rangée de chips-filtres de la toolbar — jamais de valeur fictive codée
+  // en dur, uniquement ce qui vient effectivement du label_registry.
+  _getUsedLabels() {
+    const seen = new Map();
+    this._getAutomations().forEach((automation) => {
+      automation.labels.forEach((label) => {
+        if (!seen.has(label.id)) seen.set(label.id, label);
+      });
+    });
+    return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  _getFilteredAutomations() {
+    let list = this._getAutomations();
+    const needle = this._filterText.trim().toLowerCase();
+    if (needle) {
+      list = list.filter((automation) => automation.name.toLowerCase().includes(needle));
+    }
+    if (this._statusFilter !== "all") {
+      list = list.filter((automation) => automation.state === this._statusFilter);
+    }
+    if (this._activeLabelFilter) {
+      list = list.filter((automation) =>
+        automation.labels.some((label) => label.id === this._activeLabelFilter)
+      );
+    }
+    return list;
+  }
+
+  _groupAutomations(automations) {
+    const buckets = new Map();
+    const pushTo = (key, item) => {
+      if (!buckets.has(key)) buckets.set(key, []);
+      buckets.get(key).push(item);
+    };
+
+    if (this._groupBy === "state") {
+      automations.forEach((a) => pushTo(a.state === "on" ? "Activées" : "Désactivées", a));
+      return ["Activées", "Désactivées"]
+        .filter((key) => buckets.has(key))
+        .map((key) => ({ title: key, items: buckets.get(key) }));
+    }
+
+    if (this._groupBy === "category") {
+      automations.forEach((a) => pushTo(a.category || "Sans catégorie", a));
+      const keys = [...buckets.keys()].sort((a, b) =>
+        a === "Sans catégorie" ? 1 : b === "Sans catégorie" ? -1 : a.localeCompare(b)
+      );
+      return keys.map((key) => ({ title: key, items: buckets.get(key) }));
+    }
+
+    if (this._groupBy === "label") {
+      automations.forEach((a) => {
+        if (a.labels.length === 0) {
+          pushTo("Sans étiquette", a);
+        } else {
+          a.labels.forEach((label) => pushTo(label.name, a));
+        }
+      });
+      const keys = [...buckets.keys()].sort((a, b) =>
+        a === "Sans étiquette" ? 1 : b === "Sans étiquette" ? -1 : a.localeCompare(b)
+      );
+      return keys.map((key) => ({ title: key, items: buckets.get(key) }));
+    }
+
+    return [{ title: "", items: automations }];
+  }
+
+  // Style unique pour les chips étiquette : pastel + léger dégradé (inactif)
+  // ou plein + dégradé soutenu (actif, uniquement pour le filtre toolbar) —
+  // généré dynamiquement via color-mix() à partir de la couleur réelle de
+  // l'étiquette HA, qui n'est pas limitée à 3 teintes fixes.
+  _renderLabelChip(label, { clickable = false, active = false } = {}) {
+    const color = label.color || DEFAULT_LABEL_COLOR;
+    const style = active
+      ? `--chip-color:${escapeHtml(color)};background:linear-gradient(180deg, var(--chip-color), color-mix(in srgb, var(--chip-color) 65%, black));color:#fff;`
+      : `--chip-color:${escapeHtml(color)};background:linear-gradient(180deg, color-mix(in srgb, var(--chip-color) 20%, white), color-mix(in srgb, var(--chip-color) 38%, white));color:color-mix(in srgb, var(--chip-color) 60%, black);`;
+    const classes = ["chip", clickable ? "chip-clickable" : "", active ? "active" : ""]
+      .filter(Boolean)
+      .join(" ");
+    const dataAttr = clickable ? ` data-label-id="${escapeHtml(label.id)}"` : "";
+    return `<span class="${classes}" style="${style}"${dataAttr}>${escapeHtml(label.name)}</span>`;
+  }
+
   _renderChips() {
-    if (this._labels.length === 0) return "";
-    const chips = this._labels
-      .map((label) => `<span class="chip" style="--chip-color:${escapeHtml(label.color || "#666")}">${escapeHtml(label.name)}</span>`)
+    const usedLabels = this._getUsedLabels();
+    if (usedLabels.length === 0) return "";
+    const chips = usedLabels
+      .map((label) =>
+        this._renderLabelChip(label, { clickable: true, active: label.id === this._activeLabelFilter })
+      )
       .join("");
     return `<div class="chips">${chips}</div>`;
   }
@@ -98,22 +264,102 @@ class AutomationPlusPanel extends HTMLElement {
     `;
   }
 
-  _renderCreatePopup() {
-    if (!this._createPopupOpen) return "";
+  _renderStatusFilters() {
+    const chips = STATUS_FILTERS.map((filter) => {
+      const active = filter.id === this._statusFilter;
+      return `<button class="status-chip${active ? " active" : ""}" data-value="${filter.id}">${filter.label}</button>`;
+    }).join("");
+    return `<div class="status-filters">${chips}</div>`;
+  }
+
+  _renderTableHeader() {
     return `
-      <div class="popup-backdrop">
-        <div class="popup">
-          <h2>Nouvelle automatisation</h2>
-          <p>Cette fonctionnalité arrive bientôt — pour l'instant, crée ton automatisation directement dans Home Assistant.</p>
-          <button class="popup-close-btn">Fermer</button>
+      <div class="automation-row automation-row-header">
+        <div class="col-name">Nom</div>
+        <div class="col-labels">Étiquettes</div>
+        <div class="col-category">Catégorie</div>
+        <div class="col-area">Pièce</div>
+        <div class="col-state">État</div>
+      </div>
+    `;
+  }
+
+  _renderAutomationRow(automation) {
+    const stateOn = automation.state === "on";
+    const labelsHtml = automation.labels.map((label) => this._renderLabelChip(label)).join("");
+    const categoryHtml = automation.category
+      ? `<span class="meta-badge">${this._icon(ICON_FOLDER, 13)}<span>${escapeHtml(automation.category)}</span></span>`
+      : `<span class="meta-empty">—</span>`;
+    const areaHtml = automation.area
+      ? `<span class="meta-badge">${this._icon(ICON_MAP_PIN, 13)}<span>${escapeHtml(automation.area)}</span></span>`
+      : `<span class="meta-empty">—</span>`;
+    return `
+      <div class="automation-row${stateOn ? "" : " automation-row-off"}">
+        <div class="col-name" title="${escapeHtml(automation.name)}">${escapeHtml(automation.name)}</div>
+        <div class="col-labels">${labelsHtml || '<span class="meta-empty">—</span>'}</div>
+        <div class="col-category">${categoryHtml}</div>
+        <div class="col-area">${areaHtml}</div>
+        <div class="col-state">
+          <span class="state-toggle ${stateOn ? "on" : "off"}" title="${stateOn ? "Activée" : "Désactivée"}">
+            <span class="state-toggle-knob"></span>
+          </span>
         </div>
       </div>
     `;
   }
 
+  _renderAutomationList(automations) {
+    if (this._groupBy === "none") {
+      return `<div class="automation-table">${this._renderTableHeader()}${automations
+        .map((a) => this._renderAutomationRow(a))
+        .join("")}</div>`;
+    }
+    return this._groupAutomations(automations)
+      .map(
+        ({ title, items }) => `
+          <div class="automation-group">
+            <div class="automation-group-title">${escapeHtml(title)} <span class="group-count">${items.length}</span></div>
+            <div class="automation-table">${this._renderTableHeader()}${items
+              .map((a) => this._renderAutomationRow(a))
+              .join("")}</div>
+          </div>
+        `
+      )
+      .join("");
+  }
+
+  // Retourne uniquement le contenu interne de la liste (pas de wrapper),
+  // pour permettre un re-render partiel via _renderListOnly() sans perdre
+  // le focus du champ de recherche à chaque frappe.
+  _renderBody() {
+    if (!this._hass) {
+      return `<p class="empty-state">Chargement…</p>`;
+    }
+    if (!this._registriesLoaded) {
+      return `<p class="empty-state">Chargement des automatisations…</p>`;
+    }
+    const automations = this._getFilteredAutomations();
+    if (automations.length === 0) {
+      const filtersActive = this._filterText || this._statusFilter !== "all" || this._activeLabelFilter;
+      const message = filtersActive
+        ? "Aucune automatisation ne correspond aux filtres actuels."
+        : "Aucune automatisation trouvée.";
+      return `<p class="empty-state">${message}</p>`;
+    }
+    return this._renderAutomationList(automations);
+  }
+
+  // Re-render partiel du seul conteneur de liste : les lignes d'automatisation
+  // n'ont aucun listener à ré-attacher (toggle État non interactif pour
+  // l'instant), donc un simple remplacement d'innerHTML suffit.
+  _renderListOnly() {
+    const container = this.shadowRoot && this.shadowRoot.querySelector(".list-container");
+    if (!container) return;
+    container.innerHTML = this._renderBody();
+  }
+
   _render() {
     if (!this.shadowRoot) return;
-    const entityCount = this._hass ? Object.keys(this._hass.states).length : 0;
     this.shadowRoot.innerHTML = `
       <style>
         :host {
@@ -255,20 +501,152 @@ class AutomationPlusPanel extends HTMLElement {
           display: flex;
           align-items: center;
           gap: 6px;
+          flex-wrap: wrap;
+        }
+        .status-filters {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-left: auto;
+        }
+        .status-chip {
+          border: none;
+          border-radius: 14px;
+          padding: 6px 12px;
+          font-size: 12px;
+          font-weight: 400;
+          font-family: inherit;
+          cursor: pointer;
+          background: var(--secondary-background-color, #f1f3f4);
+          color: var(--secondary-text-color, #666);
+        }
+        .status-chip.active {
+          background: var(--primary-text-color, #212121);
+          color: var(--card-background-color, #fff);
+          font-weight: 700;
         }
         .chip {
           font-size: 11px;
-          padding: 3px 9px;
-          border-radius: 10px;
-          background: var(--chip-color);
-          color: #fff;
+          font-weight: 500;
+          padding: 4px 9px;
+          border-radius: 12px;
+          border: none;
+          font-family: inherit;
         }
-        .body {
+        .chip.chip-clickable {
+          cursor: pointer;
+        }
+        .chip.active {
+          font-weight: 700;
+        }
+        .list-container {
           padding: 16px;
         }
-        .body p {
+        .empty-state {
           margin: 0;
+          padding: 24px 0;
+          text-align: center;
+          color: var(--secondary-text-color, #666);
+        }
+        .automation-group {
+          margin-bottom: 20px;
+        }
+        .automation-group-title {
+          font-size: 13px;
+          font-weight: 700;
           color: var(--primary-text-color, #212121);
+          margin: 0 0 8px;
+        }
+        .group-count {
+          font-weight: 400;
+          color: var(--secondary-text-color, #666);
+        }
+        .automation-table {
+          background: var(--card-background-color, #fff);
+          border: 1px solid var(--divider-color, #e0e0e0);
+          border-radius: 8px;
+          overflow: hidden;
+        }
+        .automation-row {
+          display: grid;
+          grid-template-columns: minmax(180px, 2fr) minmax(80px, 1fr) minmax(80px, 1fr) minmax(80px, 1fr) 100px;
+          gap: 12px;
+          align-items: center;
+          padding: 10px 16px;
+          border-bottom: 1px solid var(--divider-color, #e0e0e0);
+        }
+        .automation-row:last-child {
+          border-bottom: none;
+        }
+        .automation-row-off {
+          background: var(--secondary-background-color, #f1f3f4);
+        }
+        .automation-row-header {
+          font-size: 11px;
+          font-weight: 700;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
+          color: var(--secondary-text-color, #666);
+          background: var(--primary-background-color, #fafafa);
+        }
+        .col-name {
+          min-width: 0;
+          overflow: hidden;
+          white-space: nowrap;
+          text-overflow: ellipsis;
+          font-size: 13px;
+          color: var(--primary-text-color, #212121);
+        }
+        .col-labels {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 4px;
+          min-width: 0;
+        }
+        .col-category,
+        .col-area {
+          min-width: 0;
+        }
+        .meta-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          font-size: 12px;
+          color: var(--secondary-text-color, #666);
+          max-width: 100%;
+        }
+        .meta-badge span {
+          overflow: hidden;
+          white-space: nowrap;
+          text-overflow: ellipsis;
+        }
+        .meta-empty {
+          color: var(--secondary-text-color, #666);
+          opacity: 0.5;
+        }
+        .col-state {
+          display: flex;
+          justify-content: flex-start;
+        }
+        .state-toggle {
+          display: inline-flex;
+          align-items: center;
+          width: 32px;
+          height: 18px;
+          border-radius: 9px;
+          padding: 2px;
+          background: var(--divider-color, #e0e0e0);
+        }
+        .state-toggle.on {
+          background: var(--primary-color, #03a9f4);
+          justify-content: flex-end;
+        }
+        .state-toggle-knob {
+          width: 14px;
+          height: 14px;
+          border-radius: 50%;
+          background: #fff;
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
         }
         .fab {
           position: fixed;
@@ -285,41 +663,6 @@ class AutomationPlusPanel extends HTMLElement {
           justify-content: center;
           cursor: pointer;
           box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
-        }
-        .popup-backdrop {
-          position: fixed;
-          inset: 0;
-          background: rgba(0, 0, 0, 0.32);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          z-index: 50;
-        }
-        .popup {
-          width: 280px;
-          padding: 24px;
-          border-radius: 12px;
-          background: var(--card-background-color, #fff);
-          box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
-        }
-        .popup h2 {
-          margin: 0 0 8px;
-          font-size: 16px;
-          color: var(--primary-text-color, #212121);
-        }
-        .popup p {
-          margin: 0 0 16px;
-          font-size: 13px;
-          color: var(--secondary-text-color, #666);
-        }
-        .popup-close-btn {
-          border: 1px solid var(--divider-color, #e0e0e0);
-          background: var(--card-background-color, #fff);
-          color: var(--primary-text-color, #212121);
-          border-radius: 8px;
-          padding: 8px 14px;
-          font-size: 13px;
-          cursor: pointer;
         }
       </style>
       <div class="header">
@@ -356,14 +699,12 @@ class AutomationPlusPanel extends HTMLElement {
           ${this._renderGroupMenu()}
         </div>
         ${this._renderChips()}
+        ${this._renderStatusFilters()}
       </div>
-      <div class="body">
-        <p>Panel connecté — ${entityCount} entités visibles.</p>
-      </div>
+      <div class="list-container">${this._renderBody()}</div>
       <button class="fab" title="Nouvelle automatisation">
         ${this._icon(ICON_PLUS, 24)}
       </button>
-      ${this._renderCreatePopup()}
     `;
     this._attachListeners();
   }
@@ -373,10 +714,11 @@ class AutomationPlusPanel extends HTMLElement {
 
     const searchInput = root.querySelector(".search-input");
     if (searchInput) {
-      // Pas de re-render au clavier : rien n'affiche encore de liste à
-      // filtrer, et un re-render à chaque frappe ferait perdre le focus.
+      // Re-render partiel uniquement (_renderListOnly) : un _render() complet
+      // recréerait le champ et ferait perdre le focus à chaque frappe.
       searchInput.addEventListener("input", (event) => {
         this._filterText = event.target.value;
+        this._renderListOnly();
       });
     }
 
@@ -404,31 +746,23 @@ class AutomationPlusPanel extends HTMLElement {
       });
     }
 
-    const fab = root.querySelector(".fab");
-    if (fab) {
-      fab.addEventListener("click", () => {
-        this._createPopupOpen = true;
+    root.querySelectorAll(".status-chip").forEach((chip) => {
+      chip.addEventListener("click", () => {
+        this._statusFilter = chip.dataset.value;
         this._render();
       });
-    }
+    });
 
-    const popupBackdrop = root.querySelector(".popup-backdrop");
-    if (popupBackdrop) {
-      popupBackdrop.addEventListener("click", (event) => {
-        if (event.target === popupBackdrop) {
-          this._createPopupOpen = false;
-          this._render();
-        }
-      });
-    }
-
-    const popupCloseBtn = root.querySelector(".popup-close-btn");
-    if (popupCloseBtn) {
-      popupCloseBtn.addEventListener("click", () => {
-        this._createPopupOpen = false;
+    root.querySelectorAll(".chip-clickable").forEach((chip) => {
+      chip.addEventListener("click", () => {
+        const id = chip.dataset.labelId;
+        this._activeLabelFilter = this._activeLabelFilter === id ? null : id;
         this._render();
       });
-    }
+    });
+
+    // FAB "+" : pas encore de lien vers la page Édition (pas codée), voir
+    // BACKLOG.md — le bouton reste visuellement en place mais inactif.
   }
 }
 

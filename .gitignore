@@ -15,3 +15,6 @@ claude-integration/
 
 # Suivi UI/design interne (privé, non distribué)
 pen-ui-integration/
+
+# Outil de preview local du panel (privé, non distribué)
+dev/

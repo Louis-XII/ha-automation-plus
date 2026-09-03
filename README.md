@@ -5,15 +5,21 @@ directement dans la sidebar de HA.
 
 ## Statut
 
-🚧 v0.4.0 — première vraie fonctionnalité de données : le Dashboard affiche
-désormais la liste réelle des automatisations (nom, étiquettes, catégorie,
-pièce, état), branchée sur `hass.states` et les registres Home Assistant
-(aucun backend requis pour cette lecture). Recherche, regroupement
-(catégorie/état/étiquette) et filtres de statut sont maintenant fonctionnels.
-Le toggle d'état est pour l'instant visuel uniquement (l'activation/
-désactivation depuis le panel arrive dans une prochaine version) ; l'édition
-d'une automatisation n'est pas encore disponible.
+🚧 v0.4.1 — correctifs : le champ de recherche perdait le focus en cours de
+frappe (le panel se re-rendait entièrement à chaque mise à jour de `hass`,
+très fréquente sur une instance HA active) ; la barre de chips d'étiquettes
+passait sur 2 lignes et cassait la toolbar quand il y en avait beaucoup —
+remplacée par un défilement horizontal (molette, trackpad, glisser) qui
+n'interfère plus avec la navigation du navigateur ; largeur du champ de
+recherche réduite pour laisser plus de place aux chips.
 
+- v0.4.0 — première vraie fonctionnalité de données : le Dashboard affiche
+  la liste réelle des automatisations (nom, étiquettes, catégorie, pièce,
+  état), branchée sur `hass.states` et les registres Home Assistant (aucun
+  backend requis pour cette lecture). Recherche, regroupement (catégorie/
+  état/étiquette) et filtres de statut fonctionnels. Le toggle d'état est
+  pour l'instant visuel uniquement ; l'édition d'une automatisation n'est
+  pas encore disponible.
 - v0.3.2 — correctifs : bouton flottant "+" repositionné en bas de l'écran
   (position fixe au lieu d'absolue, il se calait auparavant sur le bas du
   contenu au lieu du viewport), badge version pointant vers les releases

@@ -4,8 +4,8 @@
 
 // Infos de debug affichées dans le badge du header — pas de pipeline de build
 // pour l'instant, donc à tenir à jour manuellement en même temps que manifest.json.
-const DEBUG_VERSION = "0.4.0";
-const DEBUG_BUILD_DATE = "2026-09-02";
+const DEBUG_VERSION = "0.4.1";
+const DEBUG_BUILD_DATE = "2026-09-03";
 
 const REPO_URL = "https://github.com/Louis-XII/ha-automation-plus";
 const ISSUES_URL = `${REPO_URL}/issues`;
@@ -71,9 +71,30 @@ class AutomationPlusPanel extends HTMLElement {
   set hass(value) {
     const isFirstAssignment = !this._hass;
     this._hass = value;
-    this._render();
+    this._renderPreservingFocus();
     if (isFirstAssignment) {
       this._loadRegistries();
+    }
+  }
+
+  // HA réassigne `hass` à chaque changement d'état dans l'instance (pas
+  // seulement sur les automatisations), donc très fréquemment. Un _render()
+  // complet recrée le champ de recherche à chaque fois et lui fait perdre le
+  // focus pendant la frappe — on sauvegarde donc le focus/la sélection avant
+  // de re-render et on les restaure juste après.
+  _renderPreservingFocus() {
+    const root = this.shadowRoot;
+    const activeIsSearch =
+      root && root.activeElement && root.activeElement.classList.contains("search-input");
+    const selectionStart = activeIsSearch ? root.activeElement.selectionStart : null;
+    const selectionEnd = activeIsSearch ? root.activeElement.selectionEnd : null;
+    this._render();
+    if (activeIsSearch) {
+      const input = root.querySelector(".search-input");
+      if (input) {
+        input.focus();
+        input.setSelectionRange(selectionStart, selectionEnd);
+      }
     }
   }
 
@@ -431,7 +452,7 @@ class AutomationPlusPanel extends HTMLElement {
           display: flex;
           align-items: center;
           gap: 8px;
-          flex: 0 0 320px;
+          flex: 0 0 240px;
           height: 32px;
           padding: 0 10px;
           border: 1px solid var(--divider-color, #e0e0e0);
@@ -501,13 +522,30 @@ class AutomationPlusPanel extends HTMLElement {
           display: flex;
           align-items: center;
           gap: 6px;
-          flex-wrap: wrap;
+          flex-wrap: nowrap;
+          min-width: 0;
+          overflow-x: auto;
+          overflow-y: hidden;
+          scrollbar-width: thin;
+          /* Empêche l'overscroll en bout de scroll de remonter à la page —
+             sans ça, un swipe horizontal (trackpad) qui atteint la limite de
+             la barre de chips peut déclencher le geste "page précédente" du
+             navigateur, dans HA comme dans un onglet classique. */
+          overscroll-behavior-x: contain;
+        }
+        .chips::-webkit-scrollbar {
+          height: 4px;
+        }
+        .chips::-webkit-scrollbar-thumb {
+          background: var(--divider-color, #e0e0e0);
+          border-radius: 2px;
         }
         .status-filters {
           display: flex;
           align-items: center;
           gap: 8px;
           margin-left: auto;
+          flex-shrink: 0;
         }
         .status-chip {
           border: none;
@@ -532,6 +570,7 @@ class AutomationPlusPanel extends HTMLElement {
           border-radius: 12px;
           border: none;
           font-family: inherit;
+          flex-shrink: 0;
         }
         .chip.chip-clickable {
           cursor: pointer;
@@ -737,6 +776,23 @@ class AutomationPlusPanel extends HTMLElement {
         this._render();
       });
     });
+
+    // Une molette de souris classique ne défile que verticalement ; seul
+    // Chrome redirige automatiquement vers l'axe horizontal sur un conteneur
+    // qui ne déborde que là — Safari/Firefox ne le font pas. On convertit
+    // donc nous-mêmes le deltaY en scroll horizontal pour la barre de chips.
+    const chipsEl = root.querySelector(".chips");
+    if (chipsEl) {
+      chipsEl.addEventListener(
+        "wheel",
+        (event) => {
+          if (event.deltaY === 0 || chipsEl.scrollWidth <= chipsEl.clientWidth) return;
+          event.preventDefault();
+          chipsEl.scrollLeft += event.deltaY;
+        },
+        { passive: false }
+      );
+    }
 
     const dropdownBackdrop = root.querySelector(".dropdown-backdrop");
     if (dropdownBackdrop) {

@@ -42,6 +42,54 @@ def ensure_folder(config_dir: Path, relative: str) -> Path:
     return target
 
 
+# Clé top-level (flush left) `automation:` suivie d'une valeur sur la même
+# ligne (ex. `!include automations.yaml`) — ne capture pas la forme bloc
+# (mapping imbriqué sur les lignes suivantes), hors scope ici.
+_AUTOMATION_KEY_RE = re.compile(r"^automation:\s*(\S.*?)\s*$")
+
+
+def read_automation_directive(config_dir: Path) -> str | None:
+    """Lit la valeur littérale de la clé `automation:` de configuration.yaml.
+
+    Lecture texte ligne par ligne, pas un vrai parsing YAML : les tags
+    `!include`/`!include_dir_merge_list` ne sont pas parsables par PyYAML
+    standard (nécessite le loader custom de HA, qui résoudrait le contenu
+    inclus plutôt que de renvoyer le tag lui-même — inutile ici, on veut
+    justement savoir QUEL tag est utilisé). Retourne None si le fichier
+    n'existe pas ou si la clé n'est pas trouvée sous cette forme simple.
+    """
+    config_file = config_dir / "configuration.yaml"
+    if not config_file.is_file():
+        return None
+    with config_file.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            match = _AUTOMATION_KEY_RE.match(line)
+            if match:
+                return match.group(1)
+    return None
+
+
+def check_configuration_target(
+    config_dir: Path, expected_directive: str, target_relative: str, target_is_dir: bool
+) -> dict:
+    """Vérifie la directive `automation:` de configuration.yaml ET l'existence de sa cible.
+
+    Deux contrôles distincts (issue #17) : la ligne pointe-t-elle vers ce
+    qu'on attend pour le mode actif, et cette cible (fichier en mode
+    standard, dossier en mode dossier dédié) existe-t-elle réellement sur
+    le disque — les deux peuvent diverger indépendamment (ex. la ligne est
+    correcte mais le dossier a été supprimé manuellement entretemps).
+    """
+    found = read_automation_directive(config_dir)
+    target = config_dir / target_relative
+    target_exists = target.is_dir() if target_is_dir else target.is_file()
+    return {
+        "directive_ok": found == expected_directive,
+        "found_directive": found,
+        "target_exists": target_exists,
+    }
+
+
 def generate_automation_id() -> str:
     """Même convention que l'éditeur natif HA : timestamp ms en chaîne."""
     return str(int(time.time() * 1000))

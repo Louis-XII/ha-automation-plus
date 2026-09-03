@@ -20,11 +20,15 @@ from homeassistant.core import HomeAssistant
 from . import storage
 from .const import (
     API_AUTOMATIONS_URL,
+    API_CONFIG_CHECK_URL,
     API_SETTINGS_URL,
     CONF_STORAGE_MODE,
+    CONFIGURATION_YAML_FOLDER_DIRECTIVE,
+    CONFIGURATION_YAML_STANDARD_DIRECTIVE,
     DEFAULT_STORAGE_MODE,
     DEFAULT_STORAGE_PATH,
     DOMAIN,
+    STANDARD_AUTOMATIONS_FILE,
     STORAGE_MODE_FOLDER,
     STORAGE_MODE_STANDARD,
 )
@@ -127,7 +131,63 @@ class AutomationPlusAutomationView(HomeAssistantView):
         return self.json({"id": automation_id, "path": written_path})
 
 
+class AutomationPlusConfigCheckView(HomeAssistantView):
+    """Vérifie que configuration.yaml pointe vers le mode actuellement actif (issue #17).
+
+    Deux contrôles indépendants, selon le mode actif :
+    - mode standard : la clé `automation:` pointe bien vers
+      `!include automations.yaml`, ET ce fichier existe sur le disque ;
+    - mode dossier dédié : la clé pointe bien vers
+      `!include_dir_merge_list automations_plus/`, ET ce dossier existe.
+
+    Lecture seule (ARCHITECTURE.md §3) — pas de réécriture automatique de
+    configuration.yaml, risque de casser le démarrage de HA. Ne vérifie pas
+    la syntaxe globale du fichier : ce check-là reste l'outil natif HA
+    (Outils de développement > YAML), déjà référencé dans les popups de #34.
+    """
+
+    url = API_CONFIG_CHECK_URL
+    name = "api:automation_plus:config_check"
+    requires_admin = True
+
+    async def get(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        entry = _current_entry(hass)
+        options = entry.options if entry else {}
+        mode = options.get(CONF_STORAGE_MODE, DEFAULT_STORAGE_MODE)
+
+        if mode == STORAGE_MODE_FOLDER:
+            expected = CONFIGURATION_YAML_FOLDER_DIRECTIVE
+            target_relative = DEFAULT_STORAGE_PATH
+            target_is_dir = True
+        else:
+            expected = CONFIGURATION_YAML_STANDARD_DIRECTIVE
+            target_relative = STANDARD_AUTOMATIONS_FILE
+            target_is_dir = False
+
+        result = await hass.async_add_executor_job(
+            storage.check_configuration_target,
+            _config_dir(hass),
+            expected,
+            target_relative,
+            target_is_dir,
+        )
+
+        return self.json(
+            {
+                "ok": result["directive_ok"] and result["target_exists"],
+                "storage_mode": mode,
+                "expected_directive": expected,
+                "found_directive": result["found_directive"],
+                "directive_ok": result["directive_ok"],
+                "target_path": target_relative,
+                "target_exists": result["target_exists"],
+            }
+        )
+
+
 VIEWS = (
     AutomationPlusSettingsView,
     AutomationPlusAutomationView,
+    AutomationPlusConfigCheckView,
 )

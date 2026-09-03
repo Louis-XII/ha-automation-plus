@@ -5,14 +5,23 @@ directement dans la sidebar de HA.
 
 ## Statut
 
-🚧 v0.4.1 — correctifs : le champ de recherche perdait le focus en cours de
-frappe (le panel se re-rendait entièrement à chaque mise à jour de `hass`,
-très fréquente sur une instance HA active) ; la barre de chips d'étiquettes
-passait sur 2 lignes et cassait la toolbar quand il y en avait beaucoup —
-remplacée par un défilement horizontal (molette, trackpad, glisser) qui
-n'interfère plus avec la navigation du navigateur ; largeur du champ de
-recherche réduite pour laisser plus de place aux chips.
+🚧 v0.5.0 — socle backend du mode « dossier dédié » (un fichier YAML par
+automatisation, dans un dossier fixe `automations_plus/` auto-créé — pas de
+sélecteur de dossier) : nouvelles routes HTTP pour basculer le mode de
+stockage (`/api/automation_plus/settings`) et enregistrer une automatisation
+dans ce mode avec rechargement automatique (`/api/automation_plus/automations`).
+Pas encore relié à une interface : la page Réglages (bascule de mode,
+popups de confirmation déjà designées) et la page Édition (bouton
+Enregistrer) restent à construire — ces routes seront alors directement
+exploitables.
 
+- v0.4.1 — correctifs : le champ de recherche perdait le focus en cours de
+  frappe (le panel se re-rendait entièrement à chaque mise à jour de `hass`,
+  très fréquente sur une instance HA active) ; la barre de chips d'étiquettes
+  passait sur 2 lignes et cassait la toolbar quand il y en avait beaucoup —
+  remplacée par un défilement horizontal (molette, trackpad, glisser) qui
+  n'interfère plus avec la navigation du navigateur ; largeur du champ de
+  recherche réduite pour laisser plus de place aux chips.
 - v0.4.0 — première vraie fonctionnalité de données : le Dashboard affiche
   la liste réelle des automatisations (nom, étiquettes, catégorie, pièce,
   état), branchée sur `hass.states` et les registres Home Assistant (aucun

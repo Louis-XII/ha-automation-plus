@@ -7,7 +7,7 @@
 // affiché dans le badge du header ; DEBUG_BUILD_DATE n'est plus dans le
 // header (retiré sur demande) et sera affiché dans le futur bloc « À propos »
 // de la page Réglages (pas encore codée).
-const DEBUG_VERSION = "0.5.6";
+const DEBUG_VERSION = "0.6.0";
 const DEBUG_BUILD_DATE = "2026-09-04";
 
 const REPO_URL = "https://github.com/Louis-XII/ha-automation-plus";
@@ -286,8 +286,11 @@ class AutomationPlusPanel extends HTMLElement {
       list = list.filter((automation) => automation.state === this._statusFilter);
     }
     if (this._activeLabelFilters.size > 0) {
+      // ET logique : une automatisation doit porter TOUTES les étiquettes
+      // sélectionnées, pas juste une (comportement corrigé — c'était un OU
+      // avant, qui élargissait au lieu d'affiner la sélection).
       list = list.filter((automation) =>
-        automation.labels.some((label) => this._activeLabelFilters.has(label.id))
+        [...this._activeLabelFilters].every((id) => automation.labels.some((label) => label.id === id))
       );
     }
     return list;
@@ -332,15 +335,16 @@ class AutomationPlusPanel extends HTMLElement {
     return [{ title: "", items: automations }];
   }
 
-  // Style unique pour les chips étiquette : pastel + léger dégradé (inactif)
-  // ou plein + dégradé soutenu (actif, uniquement pour le filtre toolbar) —
-  // généré dynamiquement via color-mix() à partir de la couleur réelle de
-  // l'étiquette HA, qui n'est pas limitée à 3 teintes fixes.
+  // Style unique pour les chips étiquette : plein pastel (inactif) ou plein
+  // soutenu (actif, uniquement pour le filtre toolbar), avec un liseré de la
+  // même couleur que le texte — généré dynamiquement via color-mix() à
+  // partir de la couleur réelle de l'étiquette HA, qui n'est pas limitée à
+  // 3 teintes fixes.
   _renderLabelChip(label, { clickable = false, active = false } = {}) {
     const color = label.color || DEFAULT_LABEL_COLOR;
     const style = active
-      ? `--chip-color:${escapeHtml(color)};background:linear-gradient(180deg, var(--chip-color), color-mix(in srgb, var(--chip-color) 65%, black));color:#fff;`
-      : `--chip-color:${escapeHtml(color)};background:linear-gradient(180deg, color-mix(in srgb, var(--chip-color) 20%, white), color-mix(in srgb, var(--chip-color) 38%, white));color:color-mix(in srgb, var(--chip-color) 60%, black);`;
+      ? `--chip-color:${escapeHtml(color)};background:var(--chip-color);color:#fff;border:1px solid color-mix(in srgb, var(--chip-color) 65%, black);`
+      : `--chip-color:${escapeHtml(color)};background:color-mix(in srgb, var(--chip-color) 14%, white);color:color-mix(in srgb, var(--chip-color) 60%, black);border:1px solid color-mix(in srgb, var(--chip-color) 45%, white);`;
     const classes = ["chip", clickable ? "chip-clickable" : "", active ? "active" : ""]
       .filter(Boolean)
       .join(" ");
@@ -971,7 +975,8 @@ class AutomationPlusPanel extends HTMLElement {
           flex-shrink: 0;
         }
         .status-chip {
-          border: none;
+          box-sizing: border-box;
+          border: 1px solid transparent;
           border-radius: 14px;
           padding: 6px 12px;
           font-size: 12px;
@@ -986,10 +991,17 @@ class AutomationPlusPanel extends HTMLElement {
           color: var(--card-background-color, #fff);
           font-weight: 700;
         }
+        .status-chip.active[data-value="on"] {
+          background: var(--primary-color, #03a9f4);
+        }
+        .status-chip[data-value="on"]:not(.active) {
+          border-color: color-mix(in srgb, var(--primary-color, #03a9f4) 45%, white);
+        }
         .chip {
           display: inline-flex;
           align-items: center;
-          gap: 4px;
+          box-sizing: border-box;
+          gap: 5px;
           font-size: 11px;
           font-weight: 500;
           padding: 4px 9px;
@@ -1005,9 +1017,9 @@ class AutomationPlusPanel extends HTMLElement {
           font-weight: 700;
         }
         .chip-icon {
-          --mdc-icon-size: 12px;
-          width: 12px;
-          height: 12px;
+          --mdc-icon-size: 10px;
+          width: 10px;
+          height: 10px;
           color: inherit;
         }
         .chip-reset {

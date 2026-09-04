@@ -3,9 +3,27 @@
 Panel Home Assistant (via HACS) pour visualiser et gérer les automatisations
 directement dans la sidebar de HA.
 
+## Présentation
+
+AutomationPlus ajoute un panel dédié dans la sidebar de Home Assistant pour
+consulter et piloter ses automatisations sans dépendre de la taille du
+fichier `automations.yaml` ni de l'éditeur YAML natif. Recherche, filtres
+(étiquette, catégorie, pièce, statut) et activation/désactivation en un
+clic depuis une liste claire, plus une page Réglages pour vérifier que la
+configuration est cohérente et exporter ses automatisations. Un mode de
+stockage alternatif (un fichier par automatisation, dans un dossier dédié)
+est en cours de développement pour les configurations volumineuses.
+
 ## Statut
 
-🚧 v0.5.6 — toast d'erreur (issue #38) quand le toggle État échoue : carte
+🚧 v0.6.0 — page Réglages fonctionnelle en mode fichier standard : bloc
+Stockage (sélecteur verrouillé sur « Fichier standard », mode dossier dédié
+visible mais inerte, vérification de la configuration), bloc Vérification
+des fichiers YAML, export du fichier `automations.yaml` actif, bloc À propos
+(version, liens, crédits). Header/toolbar/étiquettes désormais figés au
+défilement sur le Dashboard comme sur les Réglages.
+
+- v0.5.6 — toast d'erreur (issue #38) quand le toggle État échoue : carte
 flottante centrée sous le header (liseré fin `--error-color`, fond surface
 translucide `color-mix()`), auto-fermeture après 5 s ou fermeture manuelle.
 Pas de bannière de confirmation en cas de succès — le toggle lui-même suffit.

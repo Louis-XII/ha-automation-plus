@@ -7,7 +7,7 @@
 // affiché dans le badge du header ; DEBUG_BUILD_DATE n'est plus dans le
 // header (retiré sur demande) et sera affiché dans le futur bloc « À propos »
 // de la page Réglages (pas encore codée).
-const DEBUG_VERSION = "0.6.2";
+const DEBUG_VERSION = "0.6.3";
 const DEBUG_BUILD_DATE = "2026-09-04";
 
 const REPO_URL = "https://github.com/Louis-XII/ha-automation-plus";

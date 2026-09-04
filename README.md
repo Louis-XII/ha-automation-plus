@@ -16,12 +16,16 @@ est en cours de développement pour les configurations volumineuses.
 
 ## Statut
 
-🚧 v0.6.1 — correctif : le panel restait sur une page blanche après une mise
-à jour HACS suivie d'un restart HA sans rechargement complet du navigateur
-(le module JS se ré-enregistrait en double, provoquant une exception qui
-interrompait tout le script avant même son rendu). Le panel détecte
-désormais ce cas et se recharge automatiquement, sans action nécessaire.
+🚧 v0.6.2 — correctif : la v0.6.1 avait introduit un rechargement automatique
+de la page quand le module JS du panel était exécuté une seconde fois (ce que
+Home Assistant fait systématiquement à chaque ouverture du panel, pas
+seulement après une mise à jour) — ce rechargement interrompait le composant
+interne de HA en train de charger le panel et provoquait une page blanche
+permanente. Retiré : la garde silencieuse contre le double enregistrement
+(introduite en v0.6.1) suffit à elle seule.
 
+- v0.6.1 — (régression, corrigée ci-dessus) tentative de correctif de la page
+blanche après mise à jour HACS.
 - v0.6.0 — page Réglages fonctionnelle en mode fichier standard : bloc
 Stockage (sélecteur verrouillé sur « Fichier standard », mode dossier dédié
 visible mais inerte, vérification de la configuration), bloc Vérification

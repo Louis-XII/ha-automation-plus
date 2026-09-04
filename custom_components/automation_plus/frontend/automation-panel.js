@@ -7,7 +7,7 @@
 // affiché dans le badge du header ; DEBUG_BUILD_DATE n'est plus dans le
 // header (retiré sur demande) et sera affiché dans le futur bloc « À propos »
 // de la page Réglages (pas encore codée).
-const DEBUG_VERSION = "0.6.1";
+const DEBUG_VERSION = "0.6.2";
 const DEBUG_BUILD_DATE = "2026-09-04";
 
 const REPO_URL = "https://github.com/Louis-XII/ha-automation-plus";
@@ -1662,23 +1662,13 @@ class AutomationPlusPanel extends HTMLElement {
   }
 }
 
-// Le module peut être ré-exécuté dans le même onglet navigateur après une
-// mise à jour de l'intégration (restart HA sans rechargement de la page) :
-// l'URL du module change (cache-busting ?v=version) mais l'ancien tag reste
-// enregistré, et customElements.define() lève alors une exception qui
-// interrompt tout le script avant connectedCallback() — d'où une page
-// blanche nécessitant un rechargement manuel.
-// On détecte ce cas et on force nous-mêmes un rechargement complet, pour que
-// la nouvelle version s'affiche automatiquement sans action de l'utilisateur.
-// Garde anti-boucle (sessionStorage) au cas où le navigateur ré-exécuterait
-// le module plusieurs fois sur un même chargement de page.
-if (customElements.get("automation-plus-panel")) {
-  const RELOAD_GUARD_KEY = "automation_plus.last_auto_reload";
-  const lastReload = Number(sessionStorage.getItem(RELOAD_GUARD_KEY) || 0);
-  if (Date.now() - lastReload > 10000) {
-    sessionStorage.setItem(RELOAD_GUARD_KEY, String(Date.now()));
-    window.location.reload();
-  }
-} else {
+// Garde contre le double enregistrement : le module peut être ré-exécuté
+// dans le même onglet navigateur (ex. restart HA sans rechargement complet
+// de page) — sans cette garde, customElements.define() lève une exception
+// qui interrompt tout le script avant connectedCallback(), d'où une page
+// blanche. Un forçage de rechargement automatique a été tenté ici (v0.6.1)
+// mais s'est révélé lui-même source de régression (interrompt le composant
+// interne de HA en train de charger le panel) — retiré en v0.6.2.
+if (!customElements.get("automation-plus-panel")) {
   customElements.define("automation-plus-panel", AutomationPlusPanel);
 }

@@ -2,10 +2,13 @@
 // HA assigne directement les propriétés hass / narrow / panel sur l'élément,
 // pas via des attributs HTML — d'où l'usage de set hass(value) plutôt que attributeChangedCallback.
 
-// Infos de debug affichées dans le badge du header — pas de pipeline de build
-// pour l'instant, donc à tenir à jour manuellement en même temps que manifest.json.
-const DEBUG_VERSION = "0.5.0";
-const DEBUG_BUILD_DATE = "2026-09-03";
+// Infos de debug — pas de pipeline de build pour l'instant, donc à tenir à
+// jour manuellement en même temps que manifest.json. DEBUG_VERSION reste
+// affiché dans le badge du header ; DEBUG_BUILD_DATE n'est plus dans le
+// header (retiré sur demande) et sera affiché dans le futur bloc « À propos »
+// de la page Réglages (pas encore codée).
+const DEBUG_VERSION = "0.5.6";
+const DEBUG_BUILD_DATE = "2026-09-04";
 
 const REPO_URL = "https://github.com/Louis-XII/ha-automation-plus";
 const ISSUES_URL = `${REPO_URL}/issues`;
@@ -27,6 +30,16 @@ const STATUS_FILTERS = [
 // Couleur de repli pour une étiquette HA sans couleur définie.
 const DEFAULT_LABEL_COLOR = "#6b7280";
 
+// Préférences d'affichage du dashboard persistées côté navigateur
+// (localStorage) — propres à cet appareil/navigateur, pas synchronisées
+// entre appareils. Ne couvre volontairement pas la recherche texte, qui
+// reste une saisie ponctuelle.
+const PREFS_STORAGE_KEY = "automation_plus.dashboard_prefs";
+
+// Délai avant disparition automatique du toast d'erreur (fermeture manuelle
+// via le bouton × toujours possible avant ce délai).
+const ERROR_TOAST_AUTO_DISMISS_MS = 5000;
+
 // Icônes en SVG inline (pas de dépendance CDN — le panel doit fonctionner
 // sans accès internet sur une instance HA locale).
 const ICON_ARROW_LEFT = `<path d="M19 12H5"/><path d="m12 19-7-7 7-7"/>`;
@@ -40,6 +53,8 @@ const ICON_CHECK = `<path d="M20 6 9 17l-5-5"/>`;
 const ICON_PLUS = `<path d="M5 12h14"/><path d="M12 5v14"/>`;
 const ICON_FOLDER = `<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>`;
 const ICON_MAP_PIN = `<path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/>`;
+const ICON_ALERT_TRIANGLE = `<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>`;
+const ICON_X = `<path d="M18 6 6 18"/><path d="m6 6 12 12"/>`;
 
 function escapeHtml(value) {
   return String(value)
@@ -52,11 +67,21 @@ function escapeHtml(value) {
 class AutomationPlusPanel extends HTMLElement {
   constructor() {
     super();
+    const prefs = this._loadPrefs();
     this._filterText = "";
-    this._statusFilter = "all";
-    this._activeLabelFilter = null;
-    this._groupBy = "none";
+    this._statusFilter = prefs.statusFilter;
+    this._activeLabelFilters = new Set(prefs.activeLabelFilters);
+    this._groupBy = prefs.groupBy;
     this._groupMenuOpen = false;
+    // entity_id des automatisations dont le toggle est en attente de
+    // confirmation par HA — évite un double clic pendant l'aller-retour
+    // service call / mise à jour d'état.
+    this._pendingToggles = new Set();
+    // Toast d'erreur affiché uniquement en cas d'échec d'une action (ex.
+    // toggle) — jamais de bannière de confirmation en cas de succès, le
+    // changement visuel (ex. position du toggle) suffit déjà comme feedback.
+    this._errorToast = null;
+    this._errorToastTimeoutId = null;
 
     // Registres HA (entity/area/label/category) — chargés une seule fois
     // par connexion hass via WebSocket, voir _loadRegistries().
@@ -66,6 +91,44 @@ class AutomationPlusPanel extends HTMLElement {
     this._categoryRegistry = new Map();
     this._registriesLoaded = false;
     this._registriesLoading = false;
+  }
+
+  // localStorage peut échouer (navigation privée, stockage désactivé) —
+  // dans ce cas le dashboard reste utilisable, seul le rappel des
+  // préférences est perdu.
+  _loadPrefs() {
+    const defaults = { groupBy: "none", statusFilter: "all", activeLabelFilters: [] };
+    try {
+      const raw = localStorage.getItem(PREFS_STORAGE_KEY);
+      if (!raw) return defaults;
+      const parsed = JSON.parse(raw);
+      return {
+        groupBy: GROUP_OPTIONS.some((option) => option.id === parsed.groupBy) ? parsed.groupBy : defaults.groupBy,
+        statusFilter: STATUS_FILTERS.some((filter) => filter.id === parsed.statusFilter)
+          ? parsed.statusFilter
+          : defaults.statusFilter,
+        activeLabelFilters: Array.isArray(parsed.activeLabelFilters)
+          ? parsed.activeLabelFilters.filter((id) => typeof id === "string")
+          : defaults.activeLabelFilters,
+      };
+    } catch (err) {
+      return defaults;
+    }
+  }
+
+  _savePrefs() {
+    try {
+      localStorage.setItem(
+        PREFS_STORAGE_KEY,
+        JSON.stringify({
+          groupBy: this._groupBy,
+          statusFilter: this._statusFilter,
+          activeLabelFilters: [...this._activeLabelFilters],
+        })
+      );
+    } catch (err) {
+      // Stockage indisponible — pas bloquant, on continue sans persister.
+    }
   }
 
   set hass(value) {
@@ -154,7 +217,7 @@ class AutomationPlusPanel extends HTMLElement {
         const labels = labelIds
           .map((id) => this._labelRegistry.get(id))
           .filter(Boolean)
-          .map((label) => ({ id: label.label_id, name: label.name, color: label.color }));
+          .map((label) => ({ id: label.label_id, name: label.name, color: label.color, icon: label.icon }));
         return {
           entity_id: stateObj.entity_id,
           name: (stateObj.attributes && stateObj.attributes.friendly_name) || stateObj.entity_id,
@@ -188,9 +251,9 @@ class AutomationPlusPanel extends HTMLElement {
     if (this._statusFilter !== "all") {
       list = list.filter((automation) => automation.state === this._statusFilter);
     }
-    if (this._activeLabelFilter) {
+    if (this._activeLabelFilters.size > 0) {
       list = list.filter((automation) =>
-        automation.labels.some((label) => label.id === this._activeLabelFilter)
+        automation.labels.some((label) => this._activeLabelFilters.has(label.id))
       );
     }
     return list;
@@ -248,18 +311,28 @@ class AutomationPlusPanel extends HTMLElement {
       .filter(Boolean)
       .join(" ");
     const dataAttr = clickable ? ` data-label-id="${escapeHtml(label.id)}"` : "";
-    return `<span class="${classes}" style="${style}"${dataAttr}>${escapeHtml(label.name)}</span>`;
+    // <ha-icon> : élément custom déjà défini globalement par le frontend HA
+    // (le panel s'exécute dans la même page) — pas de dépendance CDN, et
+    // résout n'importe quelle icône mdi:* choisie pour l'étiquette sans
+    // avoir à embarquer un jeu d'icônes ici.
+    const iconHtml = label.icon ? `<ha-icon icon="${escapeHtml(label.icon)}" class="chip-icon"></ha-icon>` : "";
+    return `<span class="${classes}" style="${style}"${dataAttr}>${iconHtml}${escapeHtml(label.name)}</span>`;
   }
 
   _renderChips() {
     const usedLabels = this._getUsedLabels();
     if (usedLabels.length === 0) return "";
+    const hasSelection = this._activeLabelFilters.size > 0;
+    // Chip de réinitialisation toujours en première position — sélection
+    // multiple des étiquettes, donc pas de clic "bascule" évident pour tout
+    // désélectionner d'un coup sans elle.
+    const resetChip = `<button class="chip chip-reset${hasSelection ? "" : " active"}" data-action="reset-labels" ${hasSelection ? "" : "disabled"}>Tout</button>`;
     const chips = usedLabels
       .map((label) =>
-        this._renderLabelChip(label, { clickable: true, active: label.id === this._activeLabelFilter })
+        this._renderLabelChip(label, { clickable: true, active: this._activeLabelFilters.has(label.id) })
       )
       .join("");
-    return `<div class="chips">${chips}</div>`;
+    return `<div class="chips-row">${resetChip}${chips}</div>`;
   }
 
   _groupLabel() {
@@ -321,7 +394,7 @@ class AutomationPlusPanel extends HTMLElement {
         <div class="col-category">${categoryHtml}</div>
         <div class="col-area">${areaHtml}</div>
         <div class="col-state">
-          <span class="state-toggle ${stateOn ? "on" : "off"}" title="${stateOn ? "Activée" : "Désactivée"}">
+          <span class="state-toggle ${stateOn ? "on" : "off"}${this._pendingToggles.has(automation.entity_id) ? " pending" : ""}" data-entity-id="${escapeHtml(automation.entity_id)}" title="${stateOn ? "Cliquer pour désactiver" : "Cliquer pour activer"}">
             <span class="state-toggle-knob"></span>
           </span>
         </div>
@@ -361,7 +434,7 @@ class AutomationPlusPanel extends HTMLElement {
     }
     const automations = this._getFilteredAutomations();
     if (automations.length === 0) {
-      const filtersActive = this._filterText || this._statusFilter !== "all" || this._activeLabelFilter;
+      const filtersActive = this._filterText || this._statusFilter !== "all" || this._activeLabelFilters.size > 0;
       const message = filtersActive
         ? "Aucune automatisation ne correspond aux filtres actuels."
         : "Aucune automatisation trouvée.";
@@ -377,6 +450,49 @@ class AutomationPlusPanel extends HTMLElement {
     const container = this.shadowRoot && this.shadowRoot.querySelector(".list-container");
     if (!container) return;
     container.innerHTML = this._renderBody();
+  }
+
+  _renderToast() {
+    if (!this._errorToast) return "";
+    return `
+      <div class="toast toast-error">
+        ${this._icon(ICON_ALERT_TRIANGLE, 18)}
+        <span class="toast-message">${escapeHtml(this._errorToast.message)}</span>
+        <button class="toast-close" title="Fermer">${this._icon(ICON_X, 14)}</button>
+      </div>
+    `;
+  }
+
+  // Même principe que _renderListOnly() : remplace uniquement le contenu du
+  // conteneur toast (élément stable, voir _render()) pour ne pas perdre le
+  // focus du champ de recherche si un toast apparaît pendant une frappe.
+  _renderToastOnly() {
+    const container = this.shadowRoot && this.shadowRoot.querySelector(".toast-container");
+    if (!container) return;
+    container.innerHTML = this._renderToast();
+  }
+
+  // Un seul toast à la fois : un nouvel appel remplace le précédent et
+  // relance le délai d'auto-fermeture plutôt que d'empiler les messages.
+  _showErrorToast(message) {
+    if (this._errorToastTimeoutId) {
+      clearTimeout(this._errorToastTimeoutId);
+    }
+    this._errorToast = { message };
+    this._renderToastOnly();
+    this._errorToastTimeoutId = setTimeout(() => {
+      this._errorToastTimeoutId = null;
+      this._dismissErrorToast();
+    }, ERROR_TOAST_AUTO_DISMISS_MS);
+  }
+
+  _dismissErrorToast() {
+    if (this._errorToastTimeoutId) {
+      clearTimeout(this._errorToastTimeoutId);
+      this._errorToastTimeoutId = null;
+    }
+    this._errorToast = null;
+    this._renderToastOnly();
   }
 
   _render() {
@@ -518,27 +634,14 @@ class AutomationPlusPanel extends HTMLElement {
           font-weight: 600;
           color: var(--primary-color, #03a9f4);
         }
-        .chips {
+        .chips-row {
           display: flex;
           align-items: center;
+          flex-wrap: wrap;
           gap: 6px;
-          flex-wrap: nowrap;
-          min-width: 0;
-          overflow-x: auto;
-          overflow-y: hidden;
-          scrollbar-width: thin;
-          /* Empêche l'overscroll en bout de scroll de remonter à la page —
-             sans ça, un swipe horizontal (trackpad) qui atteint la limite de
-             la barre de chips peut déclencher le geste "page précédente" du
-             navigateur, dans HA comme dans un onglet classique. */
-          overscroll-behavior-x: contain;
-        }
-        .chips::-webkit-scrollbar {
-          height: 4px;
-        }
-        .chips::-webkit-scrollbar-thumb {
-          background: var(--divider-color, #e0e0e0);
-          border-radius: 2px;
+          padding: 10px 16px;
+          background: var(--card-background-color, #fff);
+          border-bottom: 1px solid var(--divider-color, #e0e0e0);
         }
         .status-filters {
           display: flex;
@@ -564,6 +667,9 @@ class AutomationPlusPanel extends HTMLElement {
           font-weight: 700;
         }
         .chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
           font-size: 11px;
           font-weight: 500;
           padding: 4px 9px;
@@ -577,6 +683,27 @@ class AutomationPlusPanel extends HTMLElement {
         }
         .chip.active {
           font-weight: 700;
+        }
+        .chip-icon {
+          --mdc-icon-size: 12px;
+          width: 12px;
+          height: 12px;
+          color: inherit;
+        }
+        .chip-reset {
+          background: var(--secondary-background-color, #f1f3f4);
+          color: var(--secondary-text-color, #666);
+          cursor: pointer;
+          padding-left: 10px;
+          padding-right: 10px;
+        }
+        .chip-reset:not(:disabled):hover {
+          background: var(--divider-color, #e0e0e0);
+        }
+        .chip-reset.active {
+          background: var(--primary-text-color, #212121);
+          color: var(--card-background-color, #fff);
+          cursor: default;
         }
         .list-container {
           padding: 16px;
@@ -675,6 +802,11 @@ class AutomationPlusPanel extends HTMLElement {
           border-radius: 9px;
           padding: 2px;
           background: var(--divider-color, #e0e0e0);
+          cursor: pointer;
+        }
+        .state-toggle.pending {
+          opacity: 0.5;
+          pointer-events: none;
         }
         .state-toggle.on {
           background: var(--primary-color, #03a9f4);
@@ -703,6 +835,49 @@ class AutomationPlusPanel extends HTMLElement {
           cursor: pointer;
           box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
         }
+        .toast-container {
+          position: fixed;
+          top: 64px;
+          left: 50%;
+          transform: translateX(-50%);
+          z-index: 20;
+          pointer-events: none;
+        }
+        .toast {
+          pointer-events: auto;
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          max-width: 420px;
+          padding: 14px 16px;
+          border-radius: 12px;
+          border: 1px solid var(--error-color, #c62828);
+          background: color-mix(in srgb, var(--card-background-color, #fff) 90%, transparent);
+          box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2), 0 2px 6px rgba(0, 0, 0, 0.13);
+        }
+        .toast svg {
+          color: var(--error-color, #c62828);
+          flex-shrink: 0;
+        }
+        .toast-message {
+          flex: 1;
+          font-size: 13px;
+          line-height: 1.35;
+          color: var(--error-color, #c62828);
+        }
+        .toast-close {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 20px;
+          height: 20px;
+          border: none;
+          background: none;
+          padding: 0;
+          cursor: pointer;
+          color: var(--error-color, #c62828);
+          flex-shrink: 0;
+        }
       </style>
       <div class="header">
         <div class="header-left">
@@ -710,7 +885,7 @@ class AutomationPlusPanel extends HTMLElement {
             ${this._icon(ICON_ARROW_LEFT, 22)}
           </button>
           <h1>AutomationPlus</h1>
-          <a class="version-badge" href="${RELEASES_URL}" target="_blank" rel="noopener noreferrer" title="Voir les releases sur GitHub">v${DEBUG_VERSION} · ${DEBUG_BUILD_DATE}</a>
+          <a class="version-badge" href="${RELEASES_URL}" target="_blank" rel="noopener noreferrer" title="Voir les releases sur GitHub">v${DEBUG_VERSION}</a>
         </div>
         <div class="header-actions">
           <button class="icon-button" title="Signaler un bug" onclick="window.open('${ISSUES_URL}', '_blank', 'noopener,noreferrer')">
@@ -737,15 +912,39 @@ class AutomationPlusPanel extends HTMLElement {
           </button>
           ${this._renderGroupMenu()}
         </div>
-        ${this._renderChips()}
         ${this._renderStatusFilters()}
       </div>
+      ${this._renderChips()}
       <div class="list-container">${this._renderBody()}</div>
       <button class="fab" title="Nouvelle automatisation">
         ${this._icon(ICON_PLUS, 24)}
       </button>
+      <div class="toast-container">${this._renderToast()}</div>
     `;
     this._attachListeners();
+  }
+
+  // Bascule l'état d'une automatisation via le service HA standard
+  // `automation.toggle` — jamais d'état optimiste : le state affiché reste
+  // dérivé de hass.states, seule source de vérité, mise à jour par HA lui-même
+  // (hass est réassigné très fréquemment, voir _renderPreservingFocus()).
+  // `pending` bloque juste les clics répétés le temps de l'aller-retour.
+  async _toggleAutomation(entityId) {
+    if (!entityId || !this._hass || this._pendingToggles.has(entityId)) return;
+    this._pendingToggles.add(entityId);
+    this._renderListOnly();
+    try {
+      await this._hass.callService("automation", "toggle", { entity_id: entityId });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("AutomationPlus: échec du toggle d'automatisation", entityId, err);
+      const stateObj = this._hass.states[entityId];
+      const name = (stateObj && stateObj.attributes && stateObj.attributes.friendly_name) || entityId;
+      this._showErrorToast(`Impossible de basculer « ${name} » — vérifiez vos permissions.`);
+    } finally {
+      this._pendingToggles.delete(entityId);
+      this._renderListOnly();
+    }
   }
 
   _attachListeners() {
@@ -773,26 +972,10 @@ class AutomationPlusPanel extends HTMLElement {
       option.addEventListener("click", () => {
         this._groupBy = option.dataset.value;
         this._groupMenuOpen = false;
+        this._savePrefs();
         this._render();
       });
     });
-
-    // Une molette de souris classique ne défile que verticalement ; seul
-    // Chrome redirige automatiquement vers l'axe horizontal sur un conteneur
-    // qui ne déborde que là — Safari/Firefox ne le font pas. On convertit
-    // donc nous-mêmes le deltaY en scroll horizontal pour la barre de chips.
-    const chipsEl = root.querySelector(".chips");
-    if (chipsEl) {
-      chipsEl.addEventListener(
-        "wheel",
-        (event) => {
-          if (event.deltaY === 0 || chipsEl.scrollWidth <= chipsEl.clientWidth) return;
-          event.preventDefault();
-          chipsEl.scrollLeft += event.deltaY;
-        },
-        { passive: false }
-      );
-    }
 
     const dropdownBackdrop = root.querySelector(".dropdown-backdrop");
     if (dropdownBackdrop) {
@@ -805,6 +988,7 @@ class AutomationPlusPanel extends HTMLElement {
     root.querySelectorAll(".status-chip").forEach((chip) => {
       chip.addEventListener("click", () => {
         this._statusFilter = chip.dataset.value;
+        this._savePrefs();
         this._render();
       });
     });
@@ -812,10 +996,47 @@ class AutomationPlusPanel extends HTMLElement {
     root.querySelectorAll(".chip-clickable").forEach((chip) => {
       chip.addEventListener("click", () => {
         const id = chip.dataset.labelId;
-        this._activeLabelFilter = this._activeLabelFilter === id ? null : id;
+        if (this._activeLabelFilters.has(id)) {
+          this._activeLabelFilters.delete(id);
+        } else {
+          this._activeLabelFilters.add(id);
+        }
+        this._savePrefs();
         this._render();
       });
     });
+
+    const resetLabelsChip = root.querySelector(".chip-reset");
+    if (resetLabelsChip) {
+      resetLabelsChip.addEventListener("click", () => {
+        this._activeLabelFilters.clear();
+        this._savePrefs();
+        this._render();
+      });
+    }
+
+    // Écouteur délégué sur le conteneur (pas sur chaque .state-toggle) :
+    // seul .innerHTML change lors d'un _renderListOnly() (filtre de
+    // recherche), le conteneur lui-même reste le même élément — un
+    // écouteur posé directement sur chaque toggle serait perdu à la
+    // prochaine frappe dans le champ de recherche.
+    const listContainer = root.querySelector(".list-container");
+    if (listContainer) {
+      listContainer.addEventListener("click", (event) => {
+        const toggle = event.target.closest(".state-toggle");
+        if (!toggle) return;
+        this._toggleAutomation(toggle.dataset.entityId);
+      });
+    }
+
+    const toastContainer = root.querySelector(".toast-container");
+    if (toastContainer) {
+      toastContainer.addEventListener("click", (event) => {
+        if (event.target.closest(".toast-close")) {
+          this._dismissErrorToast();
+        }
+      });
+    }
 
     // FAB "+" : pas encore de lien vers la page Édition (pas codée), voir
     // BACKLOG.md — le bouton reste visuellement en place mais inactif.

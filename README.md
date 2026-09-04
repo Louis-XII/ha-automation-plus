@@ -5,16 +5,39 @@ directement dans la sidebar de HA.
 
 ## Statut
 
-🚧 v0.5.0 — socle backend du mode « dossier dédié » (un fichier YAML par
-automatisation, dans un dossier fixe `automations_plus/` auto-créé — pas de
-sélecteur de dossier) : nouvelles routes HTTP pour basculer le mode de
-stockage (`/api/automation_plus/settings`) et enregistrer une automatisation
-dans ce mode avec rechargement automatique (`/api/automation_plus/automations`).
-Pas encore relié à une interface : la page Réglages (bascule de mode,
-popups de confirmation déjà designées) et la page Édition (bouton
-Enregistrer) restent à construire — ces routes seront alors directement
-exploitables.
+🚧 v0.5.6 — toast d'erreur (issue #38) quand le toggle État échoue : carte
+flottante centrée sous le header (liseré fin `--error-color`, fond surface
+translucide `color-mix()`), auto-fermeture après 5 s ou fermeture manuelle.
+Pas de bannière de confirmation en cas de succès — le toggle lui-même suffit.
 
+- v0.5.5 — le toggle État du Dashboard devient fonctionnel : clic → service
+  HA `automation.toggle`, état affiché toujours dérivé de `hass.states` (pas
+  d'état optimiste), protection anti double-clic pendant la confirmation.
+- v0.5.4 — icône de chaque étiquette (`label_registry`, champ `icon`,
+  mdi:*) affichée dans les chips, en toolbar comme dans les lignes du tableau,
+  via `<ha-icon>` (composant natif du frontend HA, pas de dépendance CDN).
+- v0.5.3 — le badge du header n'affiche plus que le numéro de version (date
+  de build retirée) ; la date sera réintroduite dans un futur bloc « À propos »
+  de la page Réglages, pas encore construite.
+- v0.5.2 — le filtre d'étiquettes du Dashboard passe en sélection multiple
+  (plusieurs étiquettes cumulables, logique « au moins une »), avec un chip
+  « Tout » en tête de la rangée pour réinitialiser la sélection en un clic.
+- v0.5.1 — correctifs d'ergonomie du Dashboard : la barre de chips
+  d'étiquettes (introduite en défilement horizontal en v0.4.1) repasse sur
+  plusieurs lignes, mais dans une rangée dédiée sous la toolbar au lieu
+  d'être mélangée à la recherche et au regroupement, pour ne pas casser la
+  mise en page comme avant v0.4.1 ; le regroupement, le filtre de statut et
+  le filtre d'étiquette actif sont désormais mémorisés (`localStorage` du
+  navigateur) et retrouvés à la prochaine ouverture du panel.
+- v0.5.0 — socle backend du mode « dossier dédié » (un fichier YAML par
+  automatisation, dans un dossier fixe `automations_plus/` auto-créé — pas de
+  sélecteur de dossier) : nouvelles routes HTTP pour basculer le mode de
+  stockage (`/api/automation_plus/settings`) et enregistrer une automatisation
+  dans ce mode avec rechargement automatique (`/api/automation_plus/automations`).
+  Pas encore relié à une interface : la page Réglages (bascule de mode,
+  popups de confirmation déjà designées) et la page Édition (bouton
+  Enregistrer) restent à construire — ces routes seront alors directement
+  exploitables.
 - v0.4.1 — correctifs : le champ de recherche perdait le focus en cours de
   frappe (le panel se re-rendait entièrement à chaque mise à jour de `hass`,
   très fréquente sur une instance HA active) ; la barre de chips d'étiquettes

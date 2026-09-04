@@ -7,7 +7,7 @@
 // affiché dans le badge du header ; DEBUG_BUILD_DATE n'est plus dans le
 // header (retiré sur demande) et sera affiché dans le futur bloc « À propos »
 // de la page Réglages (pas encore codée).
-const DEBUG_VERSION = "0.5.6";
+const DEBUG_VERSION = "0.6.0";
 const DEBUG_BUILD_DATE = "2026-09-04";
 
 const REPO_URL = "https://github.com/Louis-XII/ha-automation-plus";
@@ -36,6 +36,16 @@ const DEFAULT_LABEL_COLOR = "#6b7280";
 // reste une saisie ponctuelle.
 const PREFS_STORAGE_KEY = "automation_plus.dashboard_prefs";
 
+// Chemins des routes HTTP de l'intégration (voir http.py / const.py côté
+// Python — API_*_URL). hass.callApi() préfixe déjà "/api/", donc ces valeurs
+// restent sans le préfixe ; auth/sign_path (téléchargement) le veut inclus,
+// voir _exportAutomations().
+const API_PATHS = {
+  configCheck: "automation_plus/config_check",
+  yamlCheck: "automation_plus/yaml_check",
+  export: "automation_plus/export",
+};
+
 // Délai avant disparition automatique du toast d'erreur (fermeture manuelle
 // via le bouton × toujours possible avant ce délai).
 const ERROR_TOAST_AUTO_DISMISS_MS = 5000;
@@ -55,6 +65,11 @@ const ICON_FOLDER = `<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 
 const ICON_MAP_PIN = `<path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/>`;
 const ICON_ALERT_TRIANGLE = `<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>`;
 const ICON_X = `<path d="M18 6 6 18"/><path d="m6 6 12 12"/>`;
+const ICON_FILE_TEXT = `<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>`;
+const ICON_SHIELD_CHECK = `<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.79 17 5 19 5a1 1 0 0 1 1 1Z"/><path d="m9 12 2 2 4-4"/>`;
+const ICON_DOWNLOAD = `<path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/>`;
+const ICON_UPLOAD = `<path d="M12 3v12"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/>`;
+const ICON_SCROLL_TEXT = `<path d="M15 12h-5"/><path d="M15 8h-5"/><path d="M19 17V5a2 2 0 0 0-2-2H4"/><path d="M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2a1 1 0 0 0 1 1h3"/>`;
 
 function escapeHtml(value) {
   return String(value)
@@ -67,6 +82,13 @@ function escapeHtml(value) {
 class AutomationPlusPanel extends HTMLElement {
   constructor() {
     super();
+    // "dashboard" (par défaut) ou "settings" — état interne, pas de routeur :
+    // pas de bundler dans ce projet, la page Réglages est un état du même
+    // custom element plutôt qu'un composant séparé (voir ARCHITECTURE.md §5).
+    this._view = "dashboard";
+    this._configCheckState = { loading: false, result: null, error: false };
+    this._yamlCheckState = { loading: false, files: null, error: false, checkedAt: null };
+
     const prefs = this._loadPrefs();
     this._filterText = "";
     this._statusFilter = prefs.statusFilter;
@@ -151,6 +173,13 @@ class AutomationPlusPanel extends HTMLElement {
       root && root.activeElement && root.activeElement.classList.contains("search-input");
     const selectionStart = activeIsSearch ? root.activeElement.selectionStart : null;
     const selectionEnd = activeIsSearch ? root.activeElement.selectionEnd : null;
+    // Zone scrollable de la vue active (header/toolbar figés, voir CSS
+    // `.scroll-area`/`.settings-view`) — un _render() complet la recrée et
+    // remet son scroll à 0 à chaque réassignation de `hass`, aussi gênant
+    // que la perte de focus du champ recherche ci-dessus.
+    const scrollSelector = this._view === "settings" ? ".settings-view" : ".scroll-area";
+    const previousScrollEl = root && root.querySelector(scrollSelector);
+    const scrollTop = previousScrollEl ? previousScrollEl.scrollTop : 0;
     this._render();
     if (activeIsSearch) {
       const input = root.querySelector(".search-input");
@@ -158,6 +187,10 @@ class AutomationPlusPanel extends HTMLElement {
         input.focus();
         input.setSelectionRange(selectionStart, selectionEnd);
       }
+    }
+    const newScrollEl = root.querySelector(scrollSelector);
+    if (newScrollEl) {
+      newScrollEl.scrollTop = scrollTop;
     }
   }
 
@@ -221,6 +254,7 @@ class AutomationPlusPanel extends HTMLElement {
         return {
           entity_id: stateObj.entity_id,
           name: (stateObj.attributes && stateObj.attributes.friendly_name) || stateObj.entity_id,
+          icon: (stateObj.attributes && stateObj.attributes.icon) || null,
           state: stateObj.state,
           area: area ? area.name : null,
           category: category ? category.name : null,
@@ -252,8 +286,11 @@ class AutomationPlusPanel extends HTMLElement {
       list = list.filter((automation) => automation.state === this._statusFilter);
     }
     if (this._activeLabelFilters.size > 0) {
+      // ET logique : une automatisation doit porter TOUTES les étiquettes
+      // sélectionnées, pas juste une (comportement corrigé — c'était un OU
+      // avant, qui élargissait au lieu d'affiner la sélection).
       list = list.filter((automation) =>
-        automation.labels.some((label) => this._activeLabelFilters.has(label.id))
+        [...this._activeLabelFilters].every((id) => automation.labels.some((label) => label.id === id))
       );
     }
     return list;
@@ -298,15 +335,16 @@ class AutomationPlusPanel extends HTMLElement {
     return [{ title: "", items: automations }];
   }
 
-  // Style unique pour les chips étiquette : pastel + léger dégradé (inactif)
-  // ou plein + dégradé soutenu (actif, uniquement pour le filtre toolbar) —
-  // généré dynamiquement via color-mix() à partir de la couleur réelle de
-  // l'étiquette HA, qui n'est pas limitée à 3 teintes fixes.
+  // Style unique pour les chips étiquette : plein pastel (inactif) ou plein
+  // soutenu (actif, uniquement pour le filtre toolbar), avec un liseré de la
+  // même couleur que le texte — généré dynamiquement via color-mix() à
+  // partir de la couleur réelle de l'étiquette HA, qui n'est pas limitée à
+  // 3 teintes fixes.
   _renderLabelChip(label, { clickable = false, active = false } = {}) {
     const color = label.color || DEFAULT_LABEL_COLOR;
     const style = active
-      ? `--chip-color:${escapeHtml(color)};background:linear-gradient(180deg, var(--chip-color), color-mix(in srgb, var(--chip-color) 65%, black));color:#fff;`
-      : `--chip-color:${escapeHtml(color)};background:linear-gradient(180deg, color-mix(in srgb, var(--chip-color) 20%, white), color-mix(in srgb, var(--chip-color) 38%, white));color:color-mix(in srgb, var(--chip-color) 60%, black);`;
+      ? `--chip-color:${escapeHtml(color)};background:var(--chip-color);color:#fff;border:1px solid color-mix(in srgb, var(--chip-color) 65%, black);`
+      : `--chip-color:${escapeHtml(color)};background:color-mix(in srgb, var(--chip-color) 14%, white);color:color-mix(in srgb, var(--chip-color) 60%, black);border:1px solid color-mix(in srgb, var(--chip-color) 45%, white);`;
     const classes = ["chip", clickable ? "chip-clickable" : "", active ? "active" : ""]
       .filter(Boolean)
       .join(" ");
@@ -389,7 +427,13 @@ class AutomationPlusPanel extends HTMLElement {
       : `<span class="meta-empty">—</span>`;
     return `
       <div class="automation-row${stateOn ? "" : " automation-row-off"}">
-        <div class="col-name" title="${escapeHtml(automation.name)}">${escapeHtml(automation.name)}</div>
+        <div class="col-name" title="${escapeHtml(automation.name)}">
+          <ha-icon class="row-icon" icon="${escapeHtml(automation.icon || "mdi:robot")}"></ha-icon>
+          <div class="row-name-block">
+            <span class="row-name-text">${escapeHtml(automation.name)}</span>
+            <span class="row-entity-id">${escapeHtml(automation.entity_id)}</span>
+          </div>
+        </div>
         <div class="col-labels">${labelsHtml || '<span class="meta-empty">—</span>'}</div>
         <div class="col-category">${categoryHtml}</div>
         <div class="col-area">${areaHtml}</div>
@@ -495,19 +539,297 @@ class AutomationPlusPanel extends HTMLElement {
     this._renderToastOnly();
   }
 
+  // Décrit le résultat de /config_check en français, en s'appuyant sur le
+  // détail renvoyé par le backend (directive_ok / target_exists) plutôt que
+  // sur un simple "erreur" générique — les deux peuvent diverger
+  // indépendamment (voir ARCHITECTURE.md §3).
+  _describeConfigCheck(result) {
+    if (result.ok) return "la configuration correspond au mode actif.";
+    const reasons = [];
+    if (!result.directive_ok) {
+      reasons.push("la ligne « automation: » de configuration.yaml ne correspond pas au mode actif");
+    }
+    if (!result.target_exists) {
+      reasons.push(`« ${result.target_path} » est introuvable`);
+    }
+    return reasons.length > 0
+      ? `${reasons.join(" ; ")}.`
+      : "la configuration ne correspond pas au mode actif.";
+  }
+
+  async _checkConfig() {
+    if (!this._hass || this._configCheckState.loading) return;
+    this._configCheckState = { loading: true, result: null, error: false };
+    this._render();
+    try {
+      const result = await this._hass.callApi("GET", API_PATHS.configCheck);
+      this._configCheckState = { loading: false, result, error: false };
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("AutomationPlus: échec de la vérification de configuration", err);
+      this._configCheckState = { loading: false, result: null, error: true };
+    }
+    this._render();
+  }
+
+  async _checkYaml() {
+    if (!this._hass || this._yamlCheckState.loading) return;
+    this._yamlCheckState = { loading: true, files: null, error: false, checkedAt: this._yamlCheckState.checkedAt };
+    this._render();
+    try {
+      const { files } = await this._hass.callApi("GET", API_PATHS.yamlCheck);
+      this._yamlCheckState = { loading: false, files, error: false, checkedAt: new Date() };
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("AutomationPlus: échec de la vérification YAML", err);
+      this._yamlCheckState = { loading: false, files: null, error: true, checkedAt: this._yamlCheckState.checkedAt };
+    }
+    this._render();
+  }
+
+  // Téléchargement d'un fichier protégé par l'auth HA : pas de <a href>
+  // simple possible (API derrière bearer token), on passe par le mécanisme
+  // natif "signed path" (utilisé par HA lui-même pour backups/diagnostics) —
+  // une URL signée à usage court plutôt qu'un token exposé côté client.
+  async _exportAutomations() {
+    if (!this._hass) return;
+    try {
+      const signed = await this._hass.callWS({ type: "auth/sign_path", path: `/api/${API_PATHS.export}` });
+      window.open(signed.path, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("AutomationPlus: échec de l'export des automatisations", err);
+      this._showErrorToast("Impossible d'exporter les automatisations.");
+    }
+  }
+
+  _renderSoonBadge() {
+    return `<span class="soon-badge">Bientôt disponible</span>`;
+  }
+
+  // Bloc Stockage : verrouillé sur "Fichier standard" — le segment "Dossier
+  // dédié" reste visuellement présent (design déjà fait, ARCHITECTURE.md
+  // §2) mais inerte (pas de listener posé dessus), en attendant les popups
+  // de confirmation de bascule (#34/#35, pas encore codées).
+  _renderStorageBlock() {
+    const checkState = this._configCheckState;
+    let checkResultHtml = "";
+    if (checkState.loading) {
+      checkResultHtml = `<p class="check-result">Vérification en cours…</p>`;
+    } else if (checkState.error) {
+      checkResultHtml = `<p class="check-result check-error">${this._icon(ICON_X, 14)}<span>Impossible de contacter Home Assistant.</span></p>`;
+    } else if (checkState.result) {
+      const ok = checkState.result.ok;
+      checkResultHtml = `
+        <p class="check-result ${ok ? "check-ok" : "check-error"}">
+          ${this._icon(ok ? ICON_CHECK : ICON_X, 14)}
+          <span><strong>${ok ? "OK," : "Erreur,"}</strong> ${escapeHtml(this._describeConfigCheck(checkState.result))}</span>
+        </p>
+      `;
+    }
+    return `
+      <div class="settings-block">
+        <div class="settings-block-header">
+          <h2>Stockage des automatisations</h2>
+          <p>Choisir où sont stockées les automatisations.</p>
+        </div>
+        <div class="storage-selector-row">
+          <div class="storage-selector">
+            <div class="storage-segment active">
+              ${this._icon(ICON_FILE_TEXT, 14)}
+              <span>Fichier standard</span>
+            </div>
+            <div class="storage-segment disabled" title="Bientôt disponible">
+              ${this._icon(ICON_FOLDER, 14)}
+              <span>Dossier dédié</span>
+            </div>
+          </div>
+          <p class="storage-path-info">${this._icon(ICON_FILE_TEXT, 12)}<span>Chemin : <code>config/automations.yaml</code></span></p>
+        </div>
+        <div class="settings-divider"></div>
+        <div class="settings-action-row">
+          <button class="settings-btn" data-action="check-config">
+            ${this._icon(ICON_SHIELD_CHECK, 14)}
+            <span>Vérifier la configuration</span>
+          </button>
+        </div>
+        ${checkResultHtml}
+      </div>
+    `;
+  }
+
+  // Horodatage affiché au-dessus de la liste — conservé tel quel (pas remis
+  // à null) tant que l'utilisateur ne relance pas une analyse : un
+  // changement de vue (Dashboard <-> Réglages) ne doit pas le faire
+  // disparaître, seul un nouveau clic sur "Analyser" le met à jour.
+  _formatCheckTimestamp(date) {
+    const datePart = date.toLocaleDateString("fr-FR");
+    const timePart = date.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+    return `${datePart} à ${timePart}`;
+  }
+
+  // Bloc Vérification YAML : fonctionnel pour le fichier actif (mode
+  // standard) — même mécanique/rendu qu'un futur mode dossier multi-fichiers
+  // (le backend renvoie déjà une liste, à un seul élément pour l'instant ;
+  // en mode dossier elle listera tous les fichiers YAML trouvés). Chaque
+  // ligne reprend la palette OK/Erreur du bloc Stockage (_renderStorageBlock)
+  // pour rester cohérent visuellement entre les deux vérifications.
+  _renderYamlCheckBlock() {
+    const state = this._yamlCheckState;
+    let resultsHtml = "";
+    if (state.loading) {
+      resultsHtml = `<p class="check-result">Analyse en cours…</p>`;
+    } else if (state.error) {
+      resultsHtml = `<p class="check-result check-error">${this._icon(ICON_X, 14)}<span>Impossible de contacter Home Assistant.</span></p>`;
+    } else if (state.files) {
+      const timestampHtml = state.checkedAt
+        ? `<p class="yaml-check-timestamp">Vérifié le ${this._formatCheckTimestamp(state.checkedAt)}</p>`
+        : "";
+      resultsHtml = `
+        ${timestampHtml}
+        <div class="yaml-check-results">${state.files
+          .map(
+            (file) => `
+              <div class="yaml-check-row ${file.ok ? "check-ok" : "check-error"}">
+                ${this._icon(file.ok ? ICON_CHECK : ICON_X, 14)}
+                <span class="yaml-check-name">${escapeHtml(file.name)}</span>
+                <span class="yaml-check-status"><strong>${file.ok ? "OK," : "Erreur,"}</strong> ${file.ok ? "syntaxe valide." : escapeHtml(file.error)}</span>
+              </div>
+            `
+          )
+          .join("")}</div>
+      `;
+    }
+    return `
+      <div class="settings-block">
+        <div class="settings-block-header">
+          <h2>Vérification des fichiers YAML</h2>
+          <p>Analyser les fichiers qui seront lus par l'intégration.</p>
+        </div>
+        <div class="settings-action-row">
+          <button class="settings-btn" data-action="check-yaml">
+            ${this._icon(ICON_SHIELD_CHECK, 14)}
+            <span>Analyser</span>
+          </button>
+        </div>
+        ${resultsHtml}
+      </div>
+    `;
+  }
+
+  _renderDisplayBlock() {
+    return `
+      <div class="settings-block">
+        <div class="settings-block-header settings-block-header-inline">
+          <h2>Affichage</h2>
+          ${this._renderSoonBadge()}
+        </div>
+        <p>Les options d'affichage (densité de liste, thème du graphe) arriveront dans une prochaine version.</p>
+      </div>
+    `;
+  }
+
+  // Import inerte (pas de listener posé) — pas encore utile tant que le
+  // mode dossier dédié, seul mode où "importer" a un sens, n'est pas
+  // sélectionnable.
+  _renderImportExportBlock() {
+    return `
+      <div class="settings-block">
+        <div class="settings-block-header">
+          <h2>Import / Export</h2>
+          <p>Sauvegarder ou restaurer vos automatisations au format YAML.</p>
+        </div>
+        <div class="settings-action-row">
+          <button class="settings-btn" data-action="export">
+            ${this._icon(ICON_DOWNLOAD, 14)}
+            <span>Exporter les automatisations</span>
+          </button>
+          <button class="settings-btn disabled" title="Bientôt disponible" disabled>
+            ${this._icon(ICON_UPLOAD, 14)}
+            <span>Importer des automatisations</span>
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  _renderAboutBlock() {
+    return `
+      <div class="settings-block">
+        <h2>À propos</h2>
+        <div class="about-version-row">
+          <span class="about-version-badge">v${DEBUG_VERSION} · ${DEBUG_BUILD_DATE}</span>
+        </div>
+        <div class="about-links">
+          <a class="about-link" href="${RELEASES_URL}" target="_blank" rel="noopener noreferrer">
+            ${this._icon(ICON_SCROLL_TEXT, 13)}<span>Voir les nouveautés</span>
+          </a>
+          <a class="about-link" href="${ISSUES_URL}" target="_blank" rel="noopener noreferrer">
+            ${this._icon(ICON_BUG, 13)}<span>Signaler un bug / Voir les issues</span>
+          </a>
+        </div>
+        <p class="about-credits">AutomationPlus — intégration Home Assistant open source</p>
+        <p class="about-credits">${DEBUG_BUILD_DATE.slice(0, 4)} · MIT License · Développeur indépendant · 🇫🇷 codé en France</p>
+      </div>
+    `;
+  }
+
+  _renderSettingsView() {
+    return `
+      <div class="settings-view">
+        ${this._renderStorageBlock()}
+        ${this._renderYamlCheckBlock()}
+        ${this._renderDisplayBlock()}
+        ${this._renderImportExportBlock()}
+        ${this._renderAboutBlock()}
+      </div>
+    `;
+  }
+
+  _renderDashboardView() {
+    return `
+      <div class="toolbar">
+        <div class="search-wrap">
+          ${this._icon(ICON_SEARCH, 16)}
+          <input class="search-input" type="text" placeholder="Rechercher une automatisation..." value="${escapeHtml(this._filterText)}" />
+        </div>
+        <div class="regroup-wrap">
+          <button class="regroup-btn">
+            ${this._icon(ICON_LAYERS, 16)}
+            <span>${this._groupLabel()}</span>
+            ${this._icon(ICON_CHEVRON_DOWN, 14)}
+          </button>
+          ${this._renderGroupMenu()}
+        </div>
+        ${this._renderStatusFilters()}
+      </div>
+      ${this._renderChips()}
+      <div class="scroll-area">
+        <div class="list-container">${this._renderBody()}</div>
+      </div>
+      <button class="fab" title="Nouvelle automatisation">
+        ${this._icon(ICON_PLUS, 24)}
+      </button>
+    `;
+  }
+
   _render() {
     if (!this.shadowRoot) return;
     this.shadowRoot.innerHTML = `
       <style>
         :host {
-          display: block;
+          display: flex;
+          flex-direction: column;
           position: relative;
+          height: 100vh;
+          overflow: hidden;
           font-family: var(--paper-font-body1_-_font-family, sans-serif);
         }
         .header {
           display: flex;
           align-items: center;
           justify-content: space-between;
+          flex-shrink: 0;
           height: 64px;
           padding: 0 16px;
           background: var(--card-background-color, #fff);
@@ -558,6 +880,7 @@ class AutomationPlusPanel extends HTMLElement {
         .toolbar {
           display: flex;
           align-items: center;
+          flex-shrink: 0;
           gap: 12px;
           height: 48px;
           padding: 0 16px;
@@ -638,6 +961,7 @@ class AutomationPlusPanel extends HTMLElement {
           display: flex;
           align-items: center;
           flex-wrap: wrap;
+          flex-shrink: 0;
           gap: 6px;
           padding: 10px 16px;
           background: var(--card-background-color, #fff);
@@ -651,7 +975,8 @@ class AutomationPlusPanel extends HTMLElement {
           flex-shrink: 0;
         }
         .status-chip {
-          border: none;
+          box-sizing: border-box;
+          border: 1px solid transparent;
           border-radius: 14px;
           padding: 6px 12px;
           font-size: 12px;
@@ -666,10 +991,17 @@ class AutomationPlusPanel extends HTMLElement {
           color: var(--card-background-color, #fff);
           font-weight: 700;
         }
+        .status-chip.active[data-value="on"] {
+          background: var(--primary-color, #03a9f4);
+        }
+        .status-chip[data-value="on"]:not(.active) {
+          border-color: color-mix(in srgb, var(--primary-color, #03a9f4) 45%, white);
+        }
         .chip {
           display: inline-flex;
           align-items: center;
-          gap: 4px;
+          box-sizing: border-box;
+          gap: 5px;
           font-size: 11px;
           font-weight: 500;
           padding: 4px 9px;
@@ -685,9 +1017,9 @@ class AutomationPlusPanel extends HTMLElement {
           font-weight: 700;
         }
         .chip-icon {
-          --mdc-icon-size: 12px;
-          width: 12px;
-          height: 12px;
+          --mdc-icon-size: 10px;
+          width: 10px;
+          height: 10px;
           color: inherit;
         }
         .chip-reset {
@@ -704,6 +1036,11 @@ class AutomationPlusPanel extends HTMLElement {
           background: var(--primary-text-color, #212121);
           color: var(--card-background-color, #fff);
           cursor: default;
+        }
+        .scroll-area {
+          flex: 1;
+          min-height: 0;
+          overflow-y: auto;
         }
         .list-container {
           padding: 16px;
@@ -738,7 +1075,7 @@ class AutomationPlusPanel extends HTMLElement {
           grid-template-columns: minmax(180px, 2fr) minmax(80px, 1fr) minmax(80px, 1fr) minmax(80px, 1fr) 100px;
           gap: 12px;
           align-items: center;
-          padding: 10px 16px;
+          padding: 16px;
           border-bottom: 1px solid var(--divider-color, #e0e0e0);
         }
         .automation-row:last-child {
@@ -756,12 +1093,42 @@ class AutomationPlusPanel extends HTMLElement {
           background: var(--primary-background-color, #fafafa);
         }
         .col-name {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          min-width: 0;
+          font-size: 13px;
+          color: var(--primary-text-color, #212121);
+        }
+        .row-icon {
+          --mdc-icon-size: 18px;
+          width: 18px;
+          height: 18px;
+          flex-shrink: 0;
+          color: var(--secondary-text-color, #666);
+        }
+        .row-name-block {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+          min-width: 0;
+        }
+        .row-name-text {
           min-width: 0;
           overflow: hidden;
           white-space: nowrap;
           text-overflow: ellipsis;
-          font-size: 13px;
-          color: var(--primary-text-color, #212121);
+          font-size: 14px;
+          font-weight: 700;
+        }
+        .row-entity-id {
+          min-width: 0;
+          overflow: hidden;
+          white-space: nowrap;
+          text-overflow: ellipsis;
+          font-family: var(--code-font-family, monospace);
+          font-size: 12px;
+          color: var(--secondary-text-color, #666);
         }
         .col-labels {
           display: flex;
@@ -797,9 +1164,10 @@ class AutomationPlusPanel extends HTMLElement {
         .state-toggle {
           display: inline-flex;
           align-items: center;
-          width: 32px;
-          height: 18px;
-          border-radius: 9px;
+          box-sizing: border-box;
+          width: 40px;
+          height: 24px;
+          border-radius: 12px;
           padding: 2px;
           background: var(--divider-color, #e0e0e0);
           cursor: pointer;
@@ -813,8 +1181,8 @@ class AutomationPlusPanel extends HTMLElement {
           justify-content: flex-end;
         }
         .state-toggle-knob {
-          width: 14px;
-          height: 14px;
+          width: 20px;
+          height: 20px;
           border-radius: 50%;
           background: #fff;
           box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
@@ -878,10 +1246,241 @@ class AutomationPlusPanel extends HTMLElement {
           color: var(--error-color, #c62828);
           flex-shrink: 0;
         }
+        .settings-view {
+          max-width: 760px;
+          width: 100%;
+          margin: 0 auto;
+          padding: 24px 16px;
+          flex: 1;
+          min-height: 0;
+          overflow-y: auto;
+          box-sizing: border-box;
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+        }
+        .settings-block {
+          background: var(--card-background-color, #fff);
+          border: 1px solid var(--divider-color, #e0e0e0);
+          border-radius: 12px;
+          padding: 20px;
+        }
+        .settings-block h2 {
+          margin: 0 0 4px;
+          font-size: 15px;
+          font-weight: 700;
+          color: var(--primary-text-color, #212121);
+        }
+        .settings-block > p {
+          margin: 0;
+          font-size: 13px;
+          color: var(--secondary-text-color, #666);
+        }
+        .settings-block-header {
+          margin-bottom: 16px;
+        }
+        .settings-block-header > p {
+          margin: 4px 0 0;
+          font-size: 13px;
+          color: var(--secondary-text-color, #666);
+        }
+        .settings-block-header-inline {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-bottom: 8px;
+        }
+        .settings-block-header-inline h2 {
+          margin: 0;
+        }
+        .soon-badge {
+          font-size: 11px;
+          font-weight: 600;
+          padding: 2px 8px;
+          border-radius: 10px;
+          background: var(--secondary-background-color, #f1f3f4);
+          color: var(--secondary-text-color, #666);
+        }
+        .storage-selector-row {
+          display: flex;
+          align-items: center;
+          gap: 14px;
+        }
+        .storage-selector {
+          display: inline-flex;
+          flex-shrink: 0;
+          align-items: center;
+          gap: 2px;
+          padding: 3px;
+          border-radius: 9px;
+          background: var(--secondary-background-color, #f1f3f4);
+        }
+        .storage-segment {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 6px 12px;
+          border-radius: 6px;
+          font-size: 13px;
+          color: var(--secondary-text-color, #666);
+        }
+        .storage-segment.active {
+          background: var(--card-background-color, #fff);
+          color: var(--primary-text-color, #212121);
+          font-weight: 700;
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.13);
+        }
+        .storage-segment.disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+        .storage-path-info {
+          display: flex;
+          flex: 1;
+          min-width: 0;
+          align-items: center;
+          gap: 5px;
+          margin: 0;
+          font-size: 11px;
+          color: var(--secondary-text-color, #666);
+        }
+        .storage-path-info span {
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .storage-path-info code {
+          font-family: var(--code-font-family, monospace);
+        }
+        .settings-divider {
+          height: 1px;
+          margin: 16px 0;
+          background: var(--divider-color, #e0e0e0);
+        }
+        .settings-action-row {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+        .settings-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          height: 34px;
+          padding: 0 16px;
+          border: 1px solid var(--divider-color, #e0e0e0);
+          border-radius: 8px;
+          background: var(--card-background-color, #fff);
+          color: var(--secondary-text-color, #666);
+          font-size: 13px;
+          font-family: inherit;
+          cursor: pointer;
+        }
+        .settings-btn:hover:not(.disabled):not(:disabled) {
+          border-color: var(--primary-color, #03a9f4);
+          color: var(--primary-text-color, #212121);
+        }
+        .settings-btn.disabled,
+        .settings-btn:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+        .settings-block > .check-result {
+          display: flex;
+          align-items: flex-start;
+          gap: 6px;
+          margin: 12px 0 0;
+          font-size: 13px;
+          color: var(--secondary-text-color, #666);
+        }
+        .check-result.check-ok {
+          color: var(--success-color, #2e7d32);
+        }
+        .check-result.check-error {
+          color: var(--error-color, #c62828);
+        }
+        .check-result svg {
+          flex-shrink: 0;
+          margin-top: 1px;
+        }
+        .settings-block > .yaml-check-timestamp {
+          margin: 12px 0 8px;
+          font-size: 12px;
+          color: var(--secondary-text-color, #666);
+        }
+        .yaml-check-results {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        .yaml-check-row {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-size: 12px;
+          color: var(--secondary-text-color, #666);
+        }
+        .yaml-check-row.check-ok {
+          color: var(--success-color, #2e7d32);
+        }
+        .yaml-check-row.check-error {
+          color: var(--error-color, #c62828);
+        }
+        .yaml-check-row svg {
+          flex-shrink: 0;
+        }
+        .yaml-check-name {
+          font-family: var(--code-font-family, monospace);
+          color: inherit;
+        }
+        .yaml-check-status {
+          margin-left: auto;
+          text-align: right;
+          flex-shrink: 0;
+          color: inherit;
+        }
+        .about-version-row {
+          margin-bottom: 12px;
+        }
+        .about-version-badge {
+          display: inline-block;
+          font-family: var(--code-font-family, monospace);
+          font-size: 11px;
+          color: var(--secondary-text-color, #666);
+          background: var(--secondary-background-color, #f1f3f4);
+          padding: 3px 10px;
+          border-radius: 10px;
+        }
+        .about-links {
+          display: flex;
+          align-items: center;
+          flex-wrap: wrap;
+          gap: 12px;
+          margin-bottom: 12px;
+        }
+        .about-link {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 13px;
+          color: var(--primary-color, #03a9f4);
+          text-decoration: none;
+        }
+        .about-link:hover {
+          text-decoration: underline;
+        }
+        .about-credits {
+          margin: 0;
+          font-size: 11px;
+          color: var(--secondary-text-color, #666);
+        }
+        .about-credits + .about-credits {
+          margin-top: 3px;
+        }
       </style>
       <div class="header">
         <div class="header-left">
-          <button class="icon-button" title="Retour à Home Assistant" onclick="history.back()">
+          <button class="icon-button back-btn" title="${this._view === "settings" ? "Retour au Dashboard" : "Retour à Home Assistant"}">
             ${this._icon(ICON_ARROW_LEFT, 22)}
           </button>
           <h1>AutomationPlus</h1>
@@ -894,31 +1493,12 @@ class AutomationPlusPanel extends HTMLElement {
           <button class="icon-button" title="Aide">
             ${this._icon(ICON_HELP_CIRCLE, 22)}
           </button>
-          <button class="icon-button" title="Paramètres">
+          <button class="icon-button settings-btn-header" title="Paramètres">
             ${this._icon(ICON_SETTINGS, 22)}
           </button>
         </div>
       </div>
-      <div class="toolbar">
-        <div class="search-wrap">
-          ${this._icon(ICON_SEARCH, 16)}
-          <input class="search-input" type="text" placeholder="Rechercher une automatisation..." value="${escapeHtml(this._filterText)}" />
-        </div>
-        <div class="regroup-wrap">
-          <button class="regroup-btn">
-            ${this._icon(ICON_LAYERS, 16)}
-            <span>${this._groupLabel()}</span>
-            ${this._icon(ICON_CHEVRON_DOWN, 14)}
-          </button>
-          ${this._renderGroupMenu()}
-        </div>
-        ${this._renderStatusFilters()}
-      </div>
-      ${this._renderChips()}
-      <div class="list-container">${this._renderBody()}</div>
-      <button class="fab" title="Nouvelle automatisation">
-        ${this._icon(ICON_PLUS, 24)}
-      </button>
+      ${this._view === "settings" ? this._renderSettingsView() : this._renderDashboardView()}
       <div class="toast-container">${this._renderToast()}</div>
     `;
     this._attachListeners();
@@ -1040,6 +1620,45 @@ class AutomationPlusPanel extends HTMLElement {
 
     // FAB "+" : pas encore de lien vers la page Édition (pas codée), voir
     // BACKLOG.md — le bouton reste visuellement en place mais inactif.
+
+    const backBtn = root.querySelector(".back-btn");
+    if (backBtn) {
+      backBtn.addEventListener("click", () => {
+        if (this._view === "settings") {
+          this._view = "dashboard";
+          this._render();
+        } else {
+          history.back();
+        }
+      });
+    }
+
+    const settingsBtnHeader = root.querySelector(".settings-btn-header");
+    if (settingsBtnHeader) {
+      settingsBtnHeader.addEventListener("click", () => {
+        this._view = "settings";
+        this._render();
+      });
+    }
+
+    // Écouteur délégué sur .settings-view : les blocs Réglages sont
+    // recréés à chaque _render() (résultats de vérif/export), un seul
+    // listener sur le conteneur stable évite d'avoir à le reposer.
+    const settingsView = root.querySelector(".settings-view");
+    if (settingsView) {
+      settingsView.addEventListener("click", (event) => {
+        const actionEl = event.target.closest("[data-action]");
+        if (!actionEl) return;
+        const action = actionEl.dataset.action;
+        if (action === "check-config") {
+          this._checkConfig();
+        } else if (action === "check-yaml") {
+          this._checkYaml();
+        } else if (action === "export") {
+          this._exportAutomations();
+        }
+      });
+    }
   }
 }
 

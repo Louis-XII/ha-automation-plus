@@ -18,3 +18,6 @@ pen-ui-integration/
 
 # Outil de preview local du panel (privé, non distribué)
 dev/
+
+# Config locale Claude Code (privée, propre à la machine)
+.claude/

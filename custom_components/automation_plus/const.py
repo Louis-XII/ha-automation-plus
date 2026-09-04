@@ -32,3 +32,5 @@ CONFIGURATION_YAML_FOLDER_DIRECTIVE = f"!include_dir_merge_list {DEFAULT_STORAGE
 API_SETTINGS_URL = f"/api/{DOMAIN}/settings"
 API_AUTOMATIONS_URL = f"/api/{DOMAIN}/automations"
 API_CONFIG_CHECK_URL = f"/api/{DOMAIN}/config_check"
+API_EXPORT_URL = f"/api/{DOMAIN}/export"
+API_YAML_CHECK_URL = f"/api/{DOMAIN}/yaml_check"

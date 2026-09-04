@@ -21,7 +21,9 @@ from . import storage
 from .const import (
     API_AUTOMATIONS_URL,
     API_CONFIG_CHECK_URL,
+    API_EXPORT_URL,
     API_SETTINGS_URL,
+    API_YAML_CHECK_URL,
     CONF_STORAGE_MODE,
     CONFIGURATION_YAML_FOLDER_DIRECTIVE,
     CONFIGURATION_YAML_STANDARD_DIRECTIVE,
@@ -186,8 +188,75 @@ class AutomationPlusConfigCheckView(HomeAssistantView):
         )
 
 
+class AutomationPlusExportView(HomeAssistantView):
+    """Télécharge le fichier d'automatisations réellement utilisé (Bloc Import/Export).
+
+    Mode standard uniquement pour l'instant : le mode dossier dédié n'est pas
+    encore sélectionnable côté UI (Bloc Stockage verrouillé sur "Fichier
+    standard"). Un export multi-fichiers (zip du dossier) reste à concevoir
+    le jour où ce mode devient sélectionnable — refus explicite (409) en
+    attendant plutôt qu'un comportement silencieux incorrect.
+    """
+
+    url = API_EXPORT_URL
+    name = "api:automation_plus:export"
+    requires_admin = True
+
+    async def get(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        entry = _current_entry(hass)
+        options = entry.options if entry else {}
+        mode = options.get(CONF_STORAGE_MODE, DEFAULT_STORAGE_MODE)
+
+        if mode != STORAGE_MODE_STANDARD:
+            return self.json_message(
+                "Export du mode dossier dédié non encore supporté.", status_code=409
+            )
+
+        target = _config_dir(hass) / STANDARD_AUTOMATIONS_FILE
+        exists = await hass.async_add_executor_job(target.is_file)
+        if not exists:
+            return self.json_message(f"{STANDARD_AUTOMATIONS_FILE} introuvable.", status_code=404)
+
+        return web.FileResponse(
+            path=target,
+            headers={"Content-Disposition": f'attachment; filename="{STANDARD_AUTOMATIONS_FILE}"'},
+        )
+
+
+class AutomationPlusYamlCheckView(HomeAssistantView):
+    """Vérifie la syntaxe YAML du/des fichier(s) d'automatisations (Bloc Réglages).
+
+    Renvoie une liste (même forme qu'en mode dossier dédié aura plusieurs
+    entrées) pour que le rendu JS reste identique quel que soit le mode —
+    en mode standard, un seul élément : automations.yaml.
+    """
+
+    url = API_YAML_CHECK_URL
+    name = "api:automation_plus:yaml_check"
+    requires_admin = True
+
+    async def get(self, request: web.Request) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        entry = _current_entry(hass)
+        options = entry.options if entry else {}
+        mode = options.get(CONF_STORAGE_MODE, DEFAULT_STORAGE_MODE)
+
+        if mode != STORAGE_MODE_STANDARD:
+            return self.json_message(
+                "Vérification du mode dossier dédié non encore supportée.", status_code=409
+            )
+
+        result = await hass.async_add_executor_job(
+            storage.check_yaml_syntax, _config_dir(hass), STANDARD_AUTOMATIONS_FILE
+        )
+        return self.json({"files": [{"name": STANDARD_AUTOMATIONS_FILE, **result}]})
+
+
 VIEWS = (
     AutomationPlusSettingsView,
     AutomationPlusAutomationView,
     AutomationPlusConfigCheckView,
+    AutomationPlusExportView,
+    AutomationPlusYamlCheckView,
 )

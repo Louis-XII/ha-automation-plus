@@ -107,3 +107,24 @@ def write_automation_file(config_dir: Path, folder_relative: str, automation_id:
     with file_path.open("w", encoding="utf-8") as handle:
         yaml.safe_dump([payload], handle, allow_unicode=True, sort_keys=False)
     return str(file_path.relative_to(config_dir.resolve()))
+
+
+def check_yaml_syntax(config_dir: Path, relative_path: str) -> dict:
+    """Vérifie qu'un fichier YAML sous /config se parse sans erreur (Bloc
+    Réglages > Vérification des fichiers YAML).
+
+    `yaml.safe_load` uniquement — pas le loader custom de HA (qui résoudrait
+    les tags `!include*`, hors de propos ici : on vérifie juste la syntaxe
+    du fichier lui-même). Un fichier absent est signalé comme une erreur
+    plutôt que silencieusement ignoré, pour rester cohérent avec le contrôle
+    d'existence déjà fait par check_configuration_target().
+    """
+    target = resolve_safe_path(config_dir, relative_path)
+    if not target.is_file():
+        return {"ok": False, "error": "Fichier introuvable."}
+    try:
+        with target.open("r", encoding="utf-8") as handle:
+            yaml.safe_load(handle)
+    except yaml.YAMLError as err:
+        return {"ok": False, "error": str(err)}
+    return {"ok": True, "error": None}

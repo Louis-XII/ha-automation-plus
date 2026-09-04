@@ -16,13 +16,18 @@ est en cours de développement pour les configurations volumineuses.
 
 ## Statut
 
-🚧 v0.6.0 — page Réglages fonctionnelle en mode fichier standard : bloc
+🚧 v0.6.1 — correctif : le panel restait sur une page blanche après une mise
+à jour HACS suivie d'un restart HA sans rechargement complet du navigateur
+(le module JS se ré-enregistrait en double, provoquant une exception qui
+interrompait tout le script avant même son rendu). Le panel détecte
+désormais ce cas et se recharge automatiquement, sans action nécessaire.
+
+- v0.6.0 — page Réglages fonctionnelle en mode fichier standard : bloc
 Stockage (sélecteur verrouillé sur « Fichier standard », mode dossier dédié
 visible mais inerte, vérification de la configuration), bloc Vérification
 des fichiers YAML, export du fichier `automations.yaml` actif, bloc À propos
 (version, liens, crédits). Header/toolbar/étiquettes désormais figés au
 défilement sur le Dashboard comme sur les Réglages.
-
 - v0.5.6 — toast d'erreur (issue #38) quand le toggle État échoue : carte
 flottante centrée sous le header (liseré fin `--error-color`, fond surface
 translucide `color-mix()`), auto-fermeture après 5 s ou fermeture manuelle.

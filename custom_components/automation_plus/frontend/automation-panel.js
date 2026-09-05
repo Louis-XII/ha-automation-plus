@@ -821,7 +821,7 @@ class AutomationPlusPanel extends HTMLElement {
           display: flex;
           flex-direction: column;
           position: relative;
-          height: 100%;
+          height: 100vh;
           overflow: hidden;
           font-family: var(--paper-font-body1_-_font-family, sans-serif);
         }
@@ -1018,6 +1018,9 @@ class AutomationPlusPanel extends HTMLElement {
         }
         .chip-icon {
           --mdc-icon-size: 10px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
           width: 10px;
           height: 10px;
           color: inherit;

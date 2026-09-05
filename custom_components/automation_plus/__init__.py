@@ -21,24 +21,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     frontend_dir = Path(__file__).parent / "frontend"
     integration = await async_get_integration(hass, DOMAIN)
 
-    await hass.http.async_register_static_paths(
-        [StaticPathConfig(STATIC_PATH, str(frontend_dir), True)]
-    )
-
     # Dossier fixe du mode "Dossier dédié" — créé au premier lancement, pas
     # de sélecteur de dossier (voir ARCHITECTURE.md §2, révisé 2026-09-03).
+    # Hors garde ci-dessous : doit pouvoir recréer le dossier s'il a été
+    # supprimé entre deux rechargements de l'entry.
     await hass.async_add_executor_job(
         storage.ensure_folder, Path(hass.config.config_dir), DEFAULT_STORAGE_PATH
     )
 
-    # Instance unique (config_flow single_instance_allowed) : les routes ne
-    # sont enregistrées qu'une fois même si l'entry est rechargée sans
-    # redémarrage complet de HA (hass.http ne propose pas de désenregistrement).
+    # Instance unique (config_flow single_instance_allowed) : le chemin
+    # statique et les routes ne sont enregistrés qu'une fois même si l'entry
+    # est rechargée sans redémarrage complet de HA (hass.http ne propose pas
+    # de désenregistrement).
     domain_data = hass.data.setdefault(DOMAIN, {})
-    if not domain_data.get("views_registered"):
+    if not domain_data.get("setup_registered"):
+        await hass.http.async_register_static_paths(
+            [StaticPathConfig(STATIC_PATH, str(frontend_dir), True)]
+        )
         for view_cls in VIEWS:
             hass.http.register_view(view_cls())
-        domain_data["views_registered"] = True
+        domain_data["setup_registered"] = True
 
     await async_register_panel(
         hass,

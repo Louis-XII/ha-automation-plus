@@ -7,7 +7,7 @@
 // affiché dans le badge du header ; DEBUG_BUILD_DATE n'est plus dans le
 // header (retiré sur demande) et sera affiché dans le futur bloc « À propos »
 // de la page Réglages (pas encore codée).
-const DEBUG_VERSION = "0.6.8";
+const DEBUG_VERSION = "0.6.9";
 const DEBUG_BUILD_DATE = "2026-09-05";
 
 const REPO_URL = "https://github.com/Louis-XII/ha-automation-plus";
@@ -294,6 +294,16 @@ class AutomationPlusPanel extends HTMLElement {
       this.attachShadow({ mode: "open" });
     }
     this._render();
+  }
+
+  // Annule le timer du toast d'erreur (5s, voir _showErrorToast()) si le
+  // panel est détruit pendant ce délai — sinon le callback s'exécute sur un
+  // élément déjà détaché du DOM.
+  disconnectedCallback() {
+    if (this._errorToastTimeoutId) {
+      clearTimeout(this._errorToastTimeoutId);
+      this._errorToastTimeoutId = null;
+    }
   }
 
   // Charge une seule fois les registres HA nécessaires pour enrichir la
@@ -2383,7 +2393,7 @@ class AutomationPlusPanel extends HTMLElement {
           <a class="version-badge" href="${RELEASES_URL}" target="_blank" rel="noopener noreferrer" title="Voir les releases sur GitHub">v${DEBUG_VERSION}</a>
         </div>
         <div class="header-actions">
-          <button class="icon-button" title="Signaler un bug" onclick="window.open('${ISSUES_URL}', '_blank', 'noopener,noreferrer')">
+          <button class="icon-button report-bug-btn" title="Signaler un bug">
             ${this._icon(ICON_BUG, 22)}
           </button>
           <button class="icon-button" title="Aide">
@@ -2654,6 +2664,13 @@ class AutomationPlusPanel extends HTMLElement {
         } else {
           history.back();
         }
+      });
+    }
+
+    const reportBugBtn = root.querySelector(".report-bug-btn");
+    if (reportBugBtn) {
+      reportBugBtn.addEventListener("click", () => {
+        window.open(ISSUES_URL, "_blank", "noopener,noreferrer");
       });
     }
 

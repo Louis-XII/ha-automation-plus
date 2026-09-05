@@ -1,7 +1,6 @@
 # AutomationPlus
 
-Panel Home Assistant (via HACS) pour visualiser et gérer les automatisations
-directement dans la sidebar de HA.
+Panel Home Assistant (via HACS) pour visualiser et gérer les automatisations.
 
 ## Présentation
 
@@ -16,10 +15,11 @@ est en cours de développement pour les configurations volumineuses.
 
 ## Statut
 
-🚧 v0.6.5 — correctif : le header/toolbar figé au défilement (page Réglages
-et Dashboard) ne l'était plus, régression introduite par la v0.6.4 ; retour
-à la valeur qui fonctionne réellement en conditions HA. Alignement vertical
-de l'icône dans les badges d'étiquette également corrigé.
+🚧 v0.6.6 — menu Options (3 points) fonctionnel sur chaque automatisation du
+Dashboard : détail éditable (nom, icône, pièce, catégorie, étiquettes),
+activation, téléchargement (mode dossier dédié) et suppression avec
+confirmation. Ajout d'un bouton Trier indépendant du Regroupement existant
+(corrigé au passage).
 Historique détaillé des versions : voir la
 [page Releases](https://github.com/Louis-XII/ha-automation-plus/releases).
 

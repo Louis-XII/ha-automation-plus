@@ -109,6 +109,33 @@ def write_automation_file(config_dir: Path, folder_relative: str, automation_id:
     return str(file_path.relative_to(config_dir.resolve()))
 
 
+def validate_automation_id(automation_id: str) -> None:
+    """Lève UnsafePathError si `automation_id` n'est pas un nom de fichier sûr.
+
+    Partagé par delete_automation_file() et par la route GET de téléchargement
+    (http.py) — même garde que write_automation_file(), qui ne passe que par
+    generate_automation_id() côté écriture mais reçoit un id arbitraire côté
+    lecture/suppression (fourni par le client).
+    """
+    if not _SAFE_NAME_RE.match(automation_id):
+        raise UnsafePathError(f"Identifiant d'automatisation invalide : {automation_id!r}")
+
+
+def delete_automation_file(config_dir: Path, folder_relative: str, automation_id: str) -> bool:
+    """Supprime <folder>/<automation_id>.yaml (mode dossier dédié, menu Options > Supprimer).
+
+    Retourne False si le fichier n'existait déjà pas (suppression idempotente
+    plutôt qu'une erreur) — seul un identifiant non sûr lève UnsafePathError.
+    """
+    validate_automation_id(automation_id)
+    folder = resolve_safe_path(config_dir, folder_relative)
+    file_path = folder / f"{automation_id}.yaml"
+    if not file_path.is_file():
+        return False
+    file_path.unlink()
+    return True
+
+
 def check_yaml_syntax(config_dir: Path, relative_path: str) -> dict:
     """Vérifie qu'un fichier YAML sous /config se parse sans erreur (Bloc
     Réglages > Vérification des fichiers YAML).

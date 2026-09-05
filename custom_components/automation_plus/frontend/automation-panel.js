@@ -7,7 +7,7 @@
 // affiché dans le badge du header ; DEBUG_BUILD_DATE n'est plus dans le
 // header (retiré sur demande) et sera affiché dans le futur bloc « À propos »
 // de la page Réglages (pas encore codée).
-const DEBUG_VERSION = "0.6.5";
+const DEBUG_VERSION = "0.6.6";
 const DEBUG_BUILD_DATE = "2026-09-05";
 
 const REPO_URL = "https://github.com/Louis-XII/ha-automation-plus";
@@ -16,9 +16,20 @@ const RELEASES_URL = `${REPO_URL}/releases`;
 
 const GROUP_OPTIONS = [
   { id: "none", label: "Ne pas regrouper" },
+  { id: "area", label: "Pièce" },
   { id: "category", label: "Catégorie" },
   { id: "state", label: "État" },
-  { id: "label", label: "Étiquette" },
+];
+
+// Tri appliqué après le regroupement (à l'intérieur de chaque groupe s'il y
+// en a un, ou sur la liste à plat sinon) — indépendant de GROUP_OPTIONS,
+// voir _sortAutomations().
+const SORT_OPTIONS = [
+  { id: "none", label: "Ne pas trier" },
+  { id: "name", label: "Nom" },
+  { id: "area", label: "Pièce" },
+  { id: "category", label: "Catégorie" },
+  { id: "state", label: "État" },
 ];
 
 const STATUS_FILTERS = [
@@ -44,6 +55,8 @@ const API_PATHS = {
   configCheck: "automation_plus/config_check",
   yamlCheck: "automation_plus/yaml_check",
   export: "automation_plus/export",
+  settings: "automation_plus/settings",
+  automations: "automation_plus/automations",
 };
 
 // Délai avant disparition automatique du toast d'erreur (fermeture manuelle
@@ -70,6 +83,14 @@ const ICON_SHIELD_CHECK = `<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.
 const ICON_DOWNLOAD = `<path d="M12 15V3"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/>`;
 const ICON_UPLOAD = `<path d="M12 3v12"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/>`;
 const ICON_SCROLL_TEXT = `<path d="M15 12h-5"/><path d="M15 8h-5"/><path d="M19 17V5a2 2 0 0 0-2-2H4"/><path d="M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2a1 1 0 0 0 1 1h3"/>`;
+const ICON_INFO = `<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>`;
+const ICON_EDIT = `<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>`;
+const ICON_COPY = `<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>`;
+const ICON_TOGGLE_LEFT = `<rect width="20" height="12" x="2" y="6" rx="6" ry="6"/><circle cx="8" cy="12" r="2"/>`;
+const ICON_TOGGLE_RIGHT = `<rect width="20" height="12" x="2" y="6" rx="6" ry="6"/><circle cx="16" cy="12" r="2"/>`;
+const ICON_TRASH = `<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>`;
+const ICON_MORE_VERTICAL = `<circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/>`;
+const ICON_ARROW_UP_DOWN = `<path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/>`;
 
 function escapeHtml(value) {
   return String(value)
@@ -95,6 +116,8 @@ class AutomationPlusPanel extends HTMLElement {
     this._activeLabelFilters = new Set(prefs.activeLabelFilters);
     this._groupBy = prefs.groupBy;
     this._groupMenuOpen = false;
+    this._sortBy = prefs.sortBy;
+    this._sortMenuOpen = false;
     // entity_id des automatisations dont le toggle est en attente de
     // confirmation par HA — évite un double clic pendant l'aller-retour
     // service call / mise à jour d'état.
@@ -104,6 +127,23 @@ class AutomationPlusPanel extends HTMLElement {
     // changement visuel (ex. position du toggle) suffit déjà comme feedback.
     this._errorToast = null;
     this._errorToastTimeoutId = null;
+
+    // Menu Options (kebab) : entity_id de la ligne dont le menu est ouvert,
+    // un seul à la fois — null si aucun.
+    this._optionsMenuOpenFor = null;
+    // Popup de confirmation de suppression : entity_id ciblé, ou null.
+    this._deleteConfirmFor = null;
+    this._deleteInProgress = false;
+    // Popup Détail (menu Options > Détail) : entity_id ciblé + brouillon des champs en
+    // cours d'édition (copie modifiable, jamais écrite tant que non
+    // enregistrée), ou null si le popup est fermé.
+    this._detailPopupFor = null;
+    this._detailDraft = null;
+    this._detailSaving = false;
+    // Mode de stockage actif (issue backend, voir AutomationPlusSettingsView)
+    // — conditionne l'item "Télécharger" du menu kebab (dossier dédié
+    // uniquement). Chargé une fois au premier hass, voir _loadStorageMode().
+    this._storageMode = null;
 
     // Registres HA (entity/area/label/category) — chargés une seule fois
     // par connexion hass via WebSocket, voir _loadRegistries().
@@ -119,13 +159,14 @@ class AutomationPlusPanel extends HTMLElement {
   // dans ce cas le dashboard reste utilisable, seul le rappel des
   // préférences est perdu.
   _loadPrefs() {
-    const defaults = { groupBy: "none", statusFilter: "all", activeLabelFilters: [] };
+    const defaults = { groupBy: "none", sortBy: "none", statusFilter: "all", activeLabelFilters: [] };
     try {
       const raw = localStorage.getItem(PREFS_STORAGE_KEY);
       if (!raw) return defaults;
       const parsed = JSON.parse(raw);
       return {
         groupBy: GROUP_OPTIONS.some((option) => option.id === parsed.groupBy) ? parsed.groupBy : defaults.groupBy,
+        sortBy: SORT_OPTIONS.some((option) => option.id === parsed.sortBy) ? parsed.sortBy : defaults.sortBy,
         statusFilter: STATUS_FILTERS.some((filter) => filter.id === parsed.statusFilter)
           ? parsed.statusFilter
           : defaults.statusFilter,
@@ -144,6 +185,7 @@ class AutomationPlusPanel extends HTMLElement {
         PREFS_STORAGE_KEY,
         JSON.stringify({
           groupBy: this._groupBy,
+          sortBy: this._sortBy,
           statusFilter: this._statusFilter,
           activeLabelFilters: [...this._activeLabelFilters],
         })
@@ -159,6 +201,7 @@ class AutomationPlusPanel extends HTMLElement {
     this._renderPreservingFocus();
     if (isFirstAssignment) {
       this._loadRegistries();
+      this._loadStorageMode();
     }
   }
 
@@ -228,6 +271,24 @@ class AutomationPlusPanel extends HTMLElement {
     }
   }
 
+  // Mode de stockage actif (fichier standard / dossier dédié) — conditionne
+  // l'item "Télécharger" du menu Options de chaque ligne. Silencieux en cas
+  // d'échec : reste au défaut STORAGE_MODE_STANDARD-like (null -> "Télécharger"
+  // inactif), pas de toast pour un chargement en arrière-plan non déclenché
+  // par une action utilisateur.
+  async _loadStorageMode() {
+    if (!this._hass) return;
+    try {
+      const result = await this._hass.callApi("GET", API_PATHS.settings);
+      this._storageMode = result.storage_mode;
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("AutomationPlus: échec du chargement du mode de stockage", err);
+    } finally {
+      this._render();
+    }
+  }
+
   _icon(paths, size = 16) {
     return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
   }
@@ -253,11 +314,19 @@ class AutomationPlusPanel extends HTMLElement {
           .map((label) => ({ id: label.label_id, name: label.name, color: label.color, icon: label.icon }));
         return {
           entity_id: stateObj.entity_id,
+          // Identifiant interne de l'automatisation (unique_id de l'entrée
+          // registre == id utilisé par /api/config/automation/config/<id> et
+          // par les noms de fichier <id>.yaml en mode dossier dédié) — requis
+          // pour Détail/Dupliquer/Supprimer/Télécharger, distinct de entity_id.
+          id: entry ? entry.unique_id : null,
           name: (stateObj.attributes && stateObj.attributes.friendly_name) || stateObj.entity_id,
           icon: (stateObj.attributes && stateObj.attributes.icon) || null,
           state: stateObj.state,
+          area_id: areaId || null,
           area: area ? area.name : null,
+          category_id: categoryId || null,
           category: category ? category.name : null,
+          label_ids: labelIds,
           labels,
         };
       });
@@ -318,21 +387,34 @@ class AutomationPlusPanel extends HTMLElement {
       return keys.map((key) => ({ title: key, items: buckets.get(key) }));
     }
 
-    if (this._groupBy === "label") {
-      automations.forEach((a) => {
-        if (a.labels.length === 0) {
-          pushTo("Sans étiquette", a);
-        } else {
-          a.labels.forEach((label) => pushTo(label.name, a));
-        }
-      });
+    if (this._groupBy === "area") {
+      automations.forEach((a) => pushTo(a.area || "Sans pièce", a));
       const keys = [...buckets.keys()].sort((a, b) =>
-        a === "Sans étiquette" ? 1 : b === "Sans étiquette" ? -1 : a.localeCompare(b)
+        a === "Sans pièce" ? 1 : b === "Sans pièce" ? -1 : a.localeCompare(b)
       );
       return keys.map((key) => ({ title: key, items: buckets.get(key) }));
     }
 
     return [{ title: "", items: automations }];
+  }
+
+  // Tri appliqué après regroupement (à l'intérieur de chaque groupe, ou sur
+  // la liste à plat si aucun regroupement actif) — indépendant de
+  // _groupAutomations(), fonctionnement classique (ex. regrouper par pièce
+  // + trier par nom au sein de chaque pièce). Ne mute pas le tableau reçu.
+  _sortAutomations(automations) {
+    if (this._sortBy === "none") return automations;
+    const sorted = [...automations];
+    if (this._sortBy === "name") {
+      sorted.sort((a, b) => a.name.localeCompare(b.name));
+    } else if (this._sortBy === "area") {
+      sorted.sort((a, b) => (a.area || "").localeCompare(b.area || ""));
+    } else if (this._sortBy === "category") {
+      sorted.sort((a, b) => (a.category || "").localeCompare(b.category || ""));
+    } else if (this._sortBy === "state") {
+      sorted.sort((a, b) => (a.state === b.state ? 0 : a.state === "on" ? -1 : 1));
+    }
+    return sorted;
   }
 
   // Style unique pour les chips étiquette : plein pastel (inactif) ou plein
@@ -384,7 +466,30 @@ class AutomationPlusPanel extends HTMLElement {
     const options = GROUP_OPTIONS.map((option) => {
       const selected = option.id === this._groupBy;
       return `
-        <div class="dropdown-option${selected ? " selected" : ""}" data-value="${option.id}">
+        <div class="dropdown-option${selected ? " selected" : ""}" data-menu="group" data-value="${option.id}">
+          <span>${option.label}</span>
+          ${selected ? this._icon(ICON_CHECK, 14) : ""}
+        </div>
+      `;
+    }).join("");
+    return `
+      <div class="dropdown-backdrop"></div>
+      <div class="dropdown">${options}</div>
+    `;
+  }
+
+  _sortLabel() {
+    const option = SORT_OPTIONS.find((item) => item.id === this._sortBy);
+    if (!option || option.id === "none") return "Trier";
+    return `Trié par ${option.label.toLowerCase()}`;
+  }
+
+  _renderSortMenu() {
+    if (!this._sortMenuOpen) return "";
+    const options = SORT_OPTIONS.map((option) => {
+      const selected = option.id === this._sortBy;
+      return `
+        <div class="dropdown-option${selected ? " selected" : ""}" data-menu="sort" data-value="${option.id}">
           <span>${option.label}</span>
           ${selected ? this._icon(ICON_CHECK, 14) : ""}
         </div>
@@ -441,14 +546,379 @@ class AutomationPlusPanel extends HTMLElement {
           <span class="state-toggle ${stateOn ? "on" : "off"}${this._pendingToggles.has(automation.entity_id) ? " pending" : ""}" data-entity-id="${escapeHtml(automation.entity_id)}" title="${stateOn ? "Cliquer pour désactiver" : "Cliquer pour activer"}">
             <span class="state-toggle-knob"></span>
           </span>
+          <div class="options-wrap">
+            <button class="options-btn" data-entity-id="${escapeHtml(automation.entity_id)}" title="Options">
+              ${this._icon(ICON_MORE_VERTICAL, 18)}
+            </button>
+            ${this._optionsMenuOpenFor === automation.entity_id ? this._renderOptionsMenu(automation) : ""}
+          </div>
         </div>
       </div>
     `;
   }
 
+  // Menu contextuel "Options" (kebab) d'une ligne d'automatisation — un seul
+  // ouvert à la fois (_optionsMenuOpenFor), voir issue #55.
+  _renderOptionsMenu(automation) {
+    const stateOn = automation.state === "on";
+    const downloadEnabled = this._storageMode === "folder";
+    const items = [
+      { action: "more-info", icon: ICON_INFO, label: "Plus d'informations" },
+      { action: "detail", icon: ICON_FILE_TEXT, label: "Détail" },
+      {
+        action: "edition",
+        icon: ICON_EDIT,
+        label: "Édition",
+        disabled: true,
+        title: "Page Édition pas encore disponible",
+      },
+      { separator: true },
+      {
+        action: "download",
+        icon: ICON_DOWNLOAD,
+        label: "Télécharger",
+        disabled: !downloadEnabled,
+        title: downloadEnabled ? "" : "Disponible uniquement en mode dossier dédié",
+      },
+      {
+        action: "duplicate",
+        icon: ICON_COPY,
+        label: "Dupliquer",
+        disabled: true,
+        title: "Page Édition pas encore disponible",
+      },
+      {
+        action: "toggle-state",
+        icon: stateOn ? ICON_TOGGLE_RIGHT : ICON_TOGGLE_LEFT,
+        label: stateOn ? "Désactiver" : "Activer",
+      },
+      { action: "delete", icon: ICON_TRASH, label: "Supprimer", danger: true },
+    ];
+    const itemsHtml = items
+      .map((item) => {
+        if (item.separator) return `<div class="options-menu-separator"></div>`;
+        const classes = ["options-menu-item", item.disabled ? "disabled" : "", item.danger ? "options-menu-item-danger" : ""]
+          .filter(Boolean)
+          .join(" ");
+        return `
+          <div class="${classes}" data-action="${item.action}" data-entity-id="${escapeHtml(automation.entity_id)}" title="${escapeHtml(item.title || "")}">
+            ${this._icon(item.icon, 16)}
+            <span>${item.label}</span>
+          </div>
+        `;
+      })
+      .join("");
+    return `
+      <div class="dropdown-backdrop"></div>
+      <div class="options-menu">${itemsHtml}</div>
+    `;
+  }
+
+  _findAutomation(entityId) {
+    return this._getAutomations().find((a) => a.entity_id === entityId) || null;
+  }
+
+  // Popup de confirmation de suppression (menu Options > Supprimer, design
+  // pen `DCk3N`) — un seul à la fois (_deleteConfirmFor), fermé par le
+  // backdrop, la croix ou Annuler tant que _deleteInProgress est faux.
+  _renderDeleteConfirmPopup() {
+    const automation = this._findAutomation(this._deleteConfirmFor);
+    if (!automation) return "";
+    return `
+      <div class="popup-overlay" data-popup="delete">
+        <div class="popup-card popup-delete">
+          <div class="popup-header">
+            <div class="popup-header-title danger">
+              ${this._icon(ICON_TRASH, 16)}
+              <span>Supprimer l'automatisation ?</span>
+            </div>
+            <button class="popup-close" data-action="cancel-delete" title="Fermer">${this._icon(ICON_X, 14)}</button>
+          </div>
+          <div class="popup-body">
+            <p>L'automatisation « ${escapeHtml(automation.name)} » sera définitivement supprimée.</p>
+            <p class="popup-text-secondary">Cette action est irréversible : la configuration YAML correspondante sera retirée de votre installation Home Assistant.</p>
+          </div>
+          <div class="popup-footer">
+            <button class="popup-btn popup-btn-secondary" data-action="cancel-delete" ${this._deleteInProgress ? "disabled" : ""}>Annuler</button>
+            <button class="popup-btn popup-btn-danger" data-action="confirm-delete" ${this._deleteInProgress ? "disabled" : ""}>
+              ${this._icon(ICON_TRASH, 14)}<span>${this._deleteInProgress ? "Suppression…" : "Supprimer"}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // Popup "Détail" (menu Options, design pen `i3oGr`) — édite les
+  // métadonnées registre HA d'une automatisation (nom, icône, pièce,
+  // catégorie, étiquettes) + son activation. Pièce et Catégorie en
+  // sélection unique (contrairement à la maquette pen, à chips multiples) :
+  // la réalité HA ne stocke qu'une seule pièce et une seule catégorie par
+  // entité, voir entity_registry (`area_id`, `categories.automation`).
+  _renderAutomationDetailPopup() {
+    const draft = this._detailDraft;
+    if (!draft) return "";
+    const areaOptions = [`<option value="">Aucune</option>`]
+      .concat(
+        [...this._areaRegistry.values()]
+          .sort((a, b) => a.name.localeCompare(b.name))
+          .map(
+            (area) =>
+              `<option value="${escapeHtml(area.area_id)}" ${draft.areaId === area.area_id ? "selected" : ""}>${escapeHtml(area.name)}</option>`
+          )
+      )
+      .join("");
+    const categoryOptions = [`<option value="">Aucune</option>`]
+      .concat(
+        [...this._categoryRegistry.values()]
+          .sort((a, b) => a.name.localeCompare(b.name))
+          .map(
+            (category) =>
+              `<option value="${escapeHtml(category.category_id)}" ${draft.categoryId === category.category_id ? "selected" : ""}>${escapeHtml(category.name)}</option>`
+          )
+      )
+      .join("");
+    const selectedLabels = draft.labelIds.map((id) => this._labelRegistry.get(id)).filter(Boolean);
+    const labelChipsHtml = selectedLabels
+      .map((label) => {
+        const color = label.color || DEFAULT_LABEL_COLOR;
+        const style = `--chip-color:${escapeHtml(color)};background:color-mix(in srgb, var(--chip-color) 14%, white);color:color-mix(in srgb, var(--chip-color) 60%, black);border:1px solid color-mix(in srgb, var(--chip-color) 45%, white);`;
+        return `
+          <span class="detail-label-chip" style="${style}">
+            <span>${escapeHtml(label.name)}</span>
+            <button type="button" data-action="remove-label" data-label-id="${escapeHtml(label.label_id)}" title="Retirer">${this._icon(ICON_X, 10)}</button>
+          </span>
+        `;
+      })
+      .join("");
+    const remainingLabels = [...this._labelRegistry.values()]
+      .filter((label) => !draft.labelIds.includes(label.label_id))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    const addLabelOptions = [`<option value="">+ Étiquette</option>`]
+      .concat(remainingLabels.map((label) => `<option value="${escapeHtml(label.label_id)}">${escapeHtml(label.name)}</option>`))
+      .join("");
+    return `
+      <div class="popup-overlay" data-popup="detail">
+        <div class="popup-card popup-detail">
+          <div class="popup-header">
+            <div class="popup-header-title">
+              <span>Détails de l'automatisation</span>
+            </div>
+            <button class="popup-close" data-action="cancel-detail" title="Fermer">${this._icon(ICON_X, 14)}</button>
+          </div>
+          <div class="popup-body">
+            <div class="detail-field">
+              <span class="detail-label">Nom</span>
+              <div class="detail-input detail-name-row">
+                <input type="text" data-field="name" value="${escapeHtml(draft.name)}" style="border:none;background:transparent;flex:1;font:inherit;color:inherit;outline:none;padding:0;" />
+                ${this._icon(ICON_EDIT, 14)}
+              </div>
+            </div>
+            <div class="detail-field">
+              <span class="detail-label">Icône</span>
+              <div class="detail-icon-row">
+                <div class="detail-icon-preview"><ha-icon icon="${escapeHtml(draft.icon || "mdi:robot")}"></ha-icon></div>
+                <input type="text" class="detail-input" data-field="icon" value="${escapeHtml(draft.icon)}" placeholder="mdi:robot" style="flex:1;" />
+              </div>
+            </div>
+            <div class="detail-field">
+              <span class="detail-label">Pièce</span>
+              <select class="detail-select" data-field="areaId">${areaOptions}</select>
+            </div>
+            <div class="detail-field">
+              <span class="detail-label">Catégorie</span>
+              <select class="detail-select" data-field="categoryId">${categoryOptions}</select>
+            </div>
+            <div class="detail-field">
+              <span class="detail-label">Étiquette(s)</span>
+              <div class="detail-labels-zone">
+                ${labelChipsHtml}
+                <select class="detail-label-add" data-field="add-label">${addLabelOptions}</select>
+              </div>
+            </div>
+            <div class="detail-separator"></div>
+            <div class="detail-toggle-row">
+              <div class="detail-toggle-text">
+                <span class="primary">Automatisation activée</span>
+                <span class="secondary">${draft.activated ? "Elle se déclenchera normalement" : "Désactivée, elle ne se déclenchera plus"}</span>
+              </div>
+              <span class="state-toggle ${draft.activated ? "on" : "off"}" data-action="toggle-activation">
+                <span class="state-toggle-knob"></span>
+              </span>
+            </div>
+          </div>
+          <div class="popup-footer">
+            <button class="popup-btn popup-btn-secondary" data-action="cancel-detail" ${this._detailSaving ? "disabled" : ""}>Annuler</button>
+            <button class="popup-btn popup-btn-primary" data-action="save-detail" ${this._detailSaving ? "disabled" : ""}>
+              ${this._icon(ICON_CHECK, 14)}<span>${this._detailSaving ? "Enregistrement…" : "Enregistrer"}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  _openDeleteConfirm(entityId) {
+    this._deleteConfirmFor = entityId;
+    this._render();
+  }
+
+  _closeDeleteConfirm() {
+    if (this._deleteInProgress) return;
+    this._deleteConfirmFor = null;
+    this._render();
+  }
+
+  _openDetailPopup(automation) {
+    this._detailPopupFor = automation.entity_id;
+    this._detailDraft = {
+      name: automation.name,
+      icon: automation.icon || "",
+      areaId: automation.area_id || "",
+      categoryId: automation.category_id || "",
+      labelIds: [...automation.label_ids],
+      activated: automation.state === "on",
+    };
+    this._render();
+  }
+
+  _closeDetailPopup() {
+    if (this._detailSaving) return;
+    this._detailPopupFor = null;
+    this._detailDraft = null;
+    this._render();
+  }
+
+  // Suppression réelle (issue #55) : mode fichier standard via l'API REST HA
+  // native (jamais d'accès disque direct, voir CLAUDE.md), mode dossier
+  // dédié via notre propre route (AutomationPlusAutomationItemView), qui
+  // déclenche déjà `automation.reload` côté serveur.
+  async _deleteAutomation(entityId) {
+    const automation = this._findAutomation(entityId);
+    if (!automation || !automation.id || this._deleteInProgress) return;
+    this._deleteInProgress = true;
+    this._render();
+    try {
+      if (this._storageMode === "folder") {
+        await this._hass.callApi("DELETE", `${API_PATHS.automations}/${automation.id}`);
+      } else {
+        await this._hass.callApi("DELETE", `config/automation/config/${automation.id}`);
+        await this._hass.callService("automation", "reload", {});
+      }
+      this._deleteConfirmFor = null;
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("AutomationPlus: échec de la suppression d'automatisation", entityId, err);
+      this._showErrorToast(`Impossible de supprimer « ${automation.name} ».`);
+    } finally {
+      this._deleteInProgress = false;
+      this._render();
+    }
+  }
+
+  // Enregistrement des métadonnées registre (nom/icône/pièce/catégorie/
+  // étiquettes) via l'API WebSocket standard HA — jamais d'écriture directe
+  // de fichier. L'activation (marche/arrêt) n'est pas un champ du registre :
+  // un service call séparé n'est déclenché que si elle a réellement changé.
+  async _saveAutomationDetails() {
+    const entityId = this._detailPopupFor;
+    const draft = this._detailDraft;
+    if (!entityId || !draft || this._detailSaving) return;
+    this._detailSaving = true;
+    this._render();
+    try {
+      await this._hass.callWS({
+        type: "config/entity_registry/update",
+        entity_id: entityId,
+        name: draft.name.trim() || null,
+        icon: draft.icon.trim() || null,
+        area_id: draft.areaId || null,
+        categories: { automation: draft.categoryId || null },
+        labels: draft.labelIds,
+      });
+      const automation = this._findAutomation(entityId);
+      const currentlyOn = automation ? automation.state === "on" : null;
+      if (currentlyOn !== null && currentlyOn !== draft.activated) {
+        await this._hass.callService("automation", draft.activated ? "turn_on" : "turn_off", {
+          entity_id: entityId,
+        });
+      }
+      this._detailPopupFor = null;
+      this._detailDraft = null;
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("AutomationPlus: échec de l'enregistrement des détails", entityId, err);
+      this._showErrorToast("Impossible d'enregistrer les modifications.");
+    } finally {
+      this._detailSaving = false;
+      this._render();
+    }
+  }
+
+  // Téléchargement d'un fichier individuel (mode dossier dédié uniquement,
+  // menu Options > Télécharger) — même mécanisme d'URL signée que
+  // _exportAutomations().
+  async _downloadAutomation(automation) {
+    if (!this._hass || !automation.id) {
+      this._showErrorToast("Téléchargement indisponible pour cette automatisation.");
+      return;
+    }
+    try {
+      const signed = await this._hass.callWS({
+        type: "auth/sign_path",
+        path: `/api/${API_PATHS.automations}/${automation.id}`,
+      });
+      window.open(signed.path, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("AutomationPlus: échec du téléchargement d'automatisation", automation.entity_id, err);
+      this._showErrorToast(`Impossible de télécharger « ${automation.name} ».`);
+    }
+  }
+
+  // Dialogue natif HA (mêmes infos que si on cliquait sur l'entité ailleurs
+  // dans HA) — distinct de la popup "Détails" ci-dessus, qui est notre propre
+  // éditeur. `composed: true` : doit traverser la frontière du shadow DOM du
+  // panel pour atteindre le gestionnaire de dialogues du frontend HA.
+  _fireMoreInfo(entityId) {
+    this.dispatchEvent(
+      new CustomEvent("hass-more-info", {
+        detail: { entityId },
+        bubbles: true,
+        composed: true,
+      })
+    );
+  }
+
+  // Dispatch des actions du menu Options (kebab) d'une ligne, voir
+  // _renderOptionsMenu(). "edition"/"duplicate" restent désactivés côté
+  // rendu (page Édition pas encore codée) — pas d'action associée ici.
+  _handleOptionsAction(action, entityId) {
+    const automation = this._findAutomation(entityId);
+    if (!automation) {
+      this._render();
+      return;
+    }
+    if (action === "more-info") {
+      this._fireMoreInfo(entityId);
+      this._render();
+    } else if (action === "detail") {
+      this._openDetailPopup(automation);
+    } else if (action === "download") {
+      this._downloadAutomation(automation);
+      this._render();
+    } else if (action === "toggle-state") {
+      this._toggleAutomation(entityId);
+    } else if (action === "delete") {
+      this._openDeleteConfirm(entityId);
+    } else {
+      this._render();
+    }
+  }
+
   _renderAutomationList(automations) {
     if (this._groupBy === "none") {
-      return `<div class="automation-table">${this._renderTableHeader()}${automations
+      return `<div class="automation-table">${this._renderTableHeader()}${this._sortAutomations(automations)
         .map((a) => this._renderAutomationRow(a))
         .join("")}</div>`;
     }
@@ -457,7 +927,7 @@ class AutomationPlusPanel extends HTMLElement {
         ({ title, items }) => `
           <div class="automation-group">
             <div class="automation-group-title">${escapeHtml(title)} <span class="group-count">${items.length}</span></div>
-            <div class="automation-table">${this._renderTableHeader()}${items
+            <div class="automation-table">${this._renderTableHeader()}${this._sortAutomations(items)
               .map((a) => this._renderAutomationRow(a))
               .join("")}</div>
           </div>
@@ -801,6 +1271,14 @@ class AutomationPlusPanel extends HTMLElement {
           </button>
           ${this._renderGroupMenu()}
         </div>
+        <div class="regroup-wrap">
+          <button class="sort-btn">
+            ${this._icon(ICON_ARROW_UP_DOWN, 16)}
+            <span>${this._sortLabel()}</span>
+            ${this._icon(ICON_CHEVRON_DOWN, 14)}
+          </button>
+          ${this._renderSortMenu()}
+        </div>
         ${this._renderStatusFilters()}
       </div>
       ${this._renderChips()}
@@ -910,7 +1388,8 @@ class AutomationPlusPanel extends HTMLElement {
         .regroup-wrap {
           position: relative;
         }
-        .regroup-btn {
+        .regroup-btn,
+        .sort-btn {
           display: flex;
           align-items: center;
           gap: 6px;
@@ -1189,6 +1668,304 @@ class AutomationPlusPanel extends HTMLElement {
           border-radius: 50%;
           background: #fff;
           box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+        }
+        .options-wrap {
+          position: relative;
+          margin-left: 8px;
+        }
+        .options-btn {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 32px;
+          height: 32px;
+          border: none;
+          border-radius: 50%;
+          background: transparent;
+          color: var(--secondary-text-color, #727272);
+          cursor: pointer;
+        }
+        .options-btn:hover {
+          background: var(--divider-color, #e0e0e0);
+        }
+        .options-menu {
+          position: absolute;
+          top: calc(100% + 4px);
+          right: 0;
+          left: auto;
+          min-width: 220px;
+          background: var(--card-background-color, #fff);
+          border-radius: 8px;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+          padding: 4px 0;
+          z-index: 20;
+        }
+        .options-menu-item {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 10px 16px;
+          font-size: 14px;
+          color: var(--primary-text-color, #212121);
+          cursor: pointer;
+          background: none;
+          border: none;
+          width: 100%;
+          text-align: left;
+          box-sizing: border-box;
+        }
+        .options-menu-item:hover {
+          background: var(--divider-color, #e0e0e0);
+        }
+        .options-menu-item.disabled {
+          opacity: 0.4;
+          pointer-events: none;
+        }
+        .options-menu-item ha-icon {
+          --mdc-icon-size: 20px;
+          color: var(--secondary-text-color, #727272);
+        }
+        .options-menu-item-danger {
+          color: var(--error-color, #c62828);
+        }
+        .options-menu-item-danger ha-icon {
+          color: var(--error-color, #c62828);
+        }
+        .options-menu-separator {
+          height: 1px;
+          margin: 4px 0;
+          background: var(--divider-color, #e0e0e0);
+        }
+        .popup-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.45);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 50;
+          padding: 16px;
+          box-sizing: border-box;
+        }
+        .popup-card {
+          background: var(--card-background-color, #fff);
+          border-radius: 12px;
+          box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2), 0 2px 6px rgba(0, 0, 0, 0.13);
+          display: flex;
+          flex-direction: column;
+          max-height: 90vh;
+          width: 100%;
+        }
+        .popup-card.popup-delete {
+          max-width: 520px;
+        }
+        .popup-card.popup-detail {
+          max-width: 490px;
+        }
+        .popup-header {
+          padding: 16px 20px;
+          border-bottom: 1px solid var(--divider-color, #e0e0e0);
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          flex-shrink: 0;
+        }
+        .popup-header-title {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          font-size: 16px;
+          font-weight: 700;
+          color: var(--primary-text-color, #212121);
+          line-height: 1.3;
+        }
+        .popup-header-title.danger {
+          color: var(--error-color, #c62828);
+        }
+        .popup-header-title.danger span {
+          color: var(--primary-text-color, #212121);
+        }
+        .popup-close {
+          width: 28px;
+          height: 28px;
+          border-radius: 8px;
+          border: 1px solid var(--divider-color, #e0e0e0);
+          background: var(--card-background-color, #fff);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          color: var(--secondary-text-color, #666);
+          flex-shrink: 0;
+        }
+        .popup-body {
+          padding: 20px;
+          display: flex;
+          flex-direction: column;
+          gap: 14px;
+          overflow-y: auto;
+        }
+        .popup-body p {
+          margin: 0;
+          font-size: 13px;
+          line-height: 1.45;
+          color: var(--primary-text-color, #212121);
+        }
+        .popup-text-secondary {
+          color: var(--secondary-text-color, #666) !important;
+        }
+        .popup-footer {
+          padding: 12px 20px;
+          border-top: 1px solid var(--divider-color, #e0e0e0);
+          display: flex;
+          justify-content: flex-end;
+          align-items: center;
+          gap: 10px;
+          flex-shrink: 0;
+        }
+        .popup-btn {
+          height: 34px;
+          padding: 0 16px;
+          border-radius: 8px;
+          font-size: 13px;
+          cursor: pointer;
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          font-family: inherit;
+        }
+        .popup-btn-secondary {
+          background: var(--card-background-color, #fff);
+          border: 1px solid var(--divider-color, #e0e0e0);
+          color: var(--secondary-text-color, #666);
+        }
+        .popup-btn-primary {
+          background: var(--primary-color, #03a9f4);
+          border: none;
+          color: #fff;
+          font-weight: 700;
+        }
+        .popup-btn-danger {
+          background: var(--error-color, #c62828);
+          border: none;
+          color: #fff;
+          font-weight: 700;
+        }
+        .popup-btn:disabled {
+          opacity: 0.6;
+          pointer-events: none;
+        }
+        .detail-field {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+        .detail-label {
+          font-size: 12px;
+          font-weight: 700;
+          color: var(--secondary-text-color, #666);
+          line-height: 1.2;
+        }
+        .detail-input,
+        .detail-select {
+          height: 36px;
+          background: var(--secondary-background-color, #fafafa);
+          border-radius: 8px;
+          border: 1px solid var(--divider-color, #e0e0e0);
+          padding: 0 10px;
+          font-size: 13px;
+          color: var(--primary-text-color, #212121);
+          box-sizing: border-box;
+          width: 100%;
+          font-family: inherit;
+        }
+        .detail-name-row {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+        .detail-name-row ha-icon,
+        .detail-name-row svg {
+          color: var(--secondary-text-color, #666);
+          flex-shrink: 0;
+        }
+        .detail-icon-row {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+        }
+        .detail-icon-preview {
+          width: 32px;
+          height: 32px;
+          border-radius: 16px;
+          background: var(--divider-color, #f1f3f4);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+        .detail-labels-zone {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+          align-items: center;
+          background: var(--secondary-background-color, #fafafa);
+          border: 1px solid var(--divider-color, #e0e0e0);
+          border-radius: 8px;
+          padding: 6px 8px;
+          min-height: 36px;
+          box-sizing: border-box;
+        }
+        .detail-label-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          border-radius: 10px;
+          padding: 3px 8px;
+          font-size: 11px;
+          font-weight: 500;
+        }
+        .detail-label-chip button {
+          border: none;
+          background: none;
+          padding: 0;
+          display: flex;
+          cursor: pointer;
+          color: inherit;
+        }
+        .detail-label-add {
+          height: 26px;
+          border-radius: 6px;
+          border: 1px solid var(--divider-color, #e0e0e0);
+          background: var(--card-background-color, #fff);
+          font-size: 11px;
+          padding: 0 6px;
+          color: var(--secondary-text-color, #666);
+          font-family: inherit;
+        }
+        .detail-separator {
+          height: 1px;
+          background: var(--divider-color, #e0e0e0);
+        }
+        .detail-toggle-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+        }
+        .detail-toggle-text {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+        .detail-toggle-text .primary {
+          font-size: 13px;
+          color: var(--primary-text-color, #212121);
+        }
+        .detail-toggle-text .secondary {
+          font-size: 11px;
+          color: var(--secondary-text-color, #666);
         }
         .fab {
           position: fixed;
@@ -1503,6 +2280,8 @@ class AutomationPlusPanel extends HTMLElement {
       </div>
       ${this._view === "settings" ? this._renderSettingsView() : this._renderDashboardView()}
       <div class="toast-container">${this._renderToast()}</div>
+      ${this._deleteConfirmFor ? this._renderDeleteConfirmPopup() : ""}
+      ${this._detailPopupFor ? this._renderAutomationDetailPopup() : ""}
     `;
     this._attachListeners();
   }
@@ -1547,26 +2326,42 @@ class AutomationPlusPanel extends HTMLElement {
     if (regroupBtn) {
       regroupBtn.addEventListener("click", () => {
         this._groupMenuOpen = !this._groupMenuOpen;
+        this._sortMenuOpen = false;
+        this._render();
+      });
+    }
+
+    const sortBtn = root.querySelector(".sort-btn");
+    if (sortBtn) {
+      sortBtn.addEventListener("click", () => {
+        this._sortMenuOpen = !this._sortMenuOpen;
+        this._groupMenuOpen = false;
         this._render();
       });
     }
 
     root.querySelectorAll(".dropdown-option").forEach((option) => {
       option.addEventListener("click", () => {
-        this._groupBy = option.dataset.value;
-        this._groupMenuOpen = false;
+        if (option.dataset.menu === "sort") {
+          this._sortBy = option.dataset.value;
+          this._sortMenuOpen = false;
+        } else {
+          this._groupBy = option.dataset.value;
+          this._groupMenuOpen = false;
+        }
         this._savePrefs();
         this._render();
       });
     });
 
-    const dropdownBackdrop = root.querySelector(".dropdown-backdrop");
-    if (dropdownBackdrop) {
-      dropdownBackdrop.addEventListener("click", () => {
+    root.querySelectorAll(".dropdown-backdrop").forEach((backdrop) => {
+      backdrop.addEventListener("click", () => {
         this._groupMenuOpen = false;
+        this._sortMenuOpen = false;
+        this._optionsMenuOpenFor = null;
         this._render();
       });
-    }
+    });
 
     root.querySelectorAll(".status-chip").forEach((chip) => {
       chip.addEventListener("click", () => {
@@ -1607,9 +2402,90 @@ class AutomationPlusPanel extends HTMLElement {
     if (listContainer) {
       listContainer.addEventListener("click", (event) => {
         const toggle = event.target.closest(".state-toggle");
-        if (!toggle) return;
-        this._toggleAutomation(toggle.dataset.entityId);
+        if (toggle) {
+          this._toggleAutomation(toggle.dataset.entityId);
+          return;
+        }
+
+        const optionsBtn = event.target.closest(".options-btn");
+        if (optionsBtn) {
+          const id = optionsBtn.dataset.entityId;
+          this._optionsMenuOpenFor = this._optionsMenuOpenFor === id ? null : id;
+          this._render();
+          return;
+        }
+
+        const menuItem = event.target.closest(".options-menu-item");
+        if (menuItem) {
+          if (menuItem.classList.contains("disabled")) return;
+          const action = menuItem.dataset.action;
+          const entityId = menuItem.dataset.entityId;
+          this._optionsMenuOpenFor = null;
+          this._handleOptionsAction(action, entityId);
+        }
       });
+    }
+
+    const deletePopup = root.querySelector('.popup-overlay[data-popup="delete"]');
+    if (deletePopup) {
+      deletePopup.addEventListener("click", (event) => {
+        if (event.target === deletePopup) {
+          this._closeDeleteConfirm();
+          return;
+        }
+        const actionEl = event.target.closest("[data-action]");
+        if (!actionEl) return;
+        if (actionEl.dataset.action === "cancel-delete") {
+          this._closeDeleteConfirm();
+        } else if (actionEl.dataset.action === "confirm-delete") {
+          this._deleteAutomation(this._deleteConfirmFor);
+        }
+      });
+    }
+
+    const detailPopup = root.querySelector('.popup-overlay[data-popup="detail"]');
+    if (detailPopup) {
+      detailPopup.addEventListener("click", (event) => {
+        if (event.target === detailPopup) {
+          this._closeDetailPopup();
+          return;
+        }
+        const actionEl = event.target.closest("[data-action]");
+        if (!actionEl) return;
+        const action = actionEl.dataset.action;
+        if (action === "cancel-detail") {
+          this._closeDetailPopup();
+        } else if (action === "save-detail") {
+          this._saveAutomationDetails();
+        } else if (action === "toggle-activation") {
+          this._detailDraft.activated = !this._detailDraft.activated;
+          this._render();
+        } else if (action === "remove-label") {
+          this._detailDraft.labelIds = this._detailDraft.labelIds.filter(
+            (id) => id !== actionEl.dataset.labelId
+          );
+          this._render();
+        }
+      });
+      // Champs texte/sélecteurs : mise à jour silencieuse du brouillon (pas
+      // de _render() sur "input" pour ne pas faire perdre le focus en cours
+      // de frappe, voir _renderPreservingFocus() pour le même principe).
+      detailPopup.querySelectorAll("[data-field]").forEach((field) => {
+        if (field.dataset.field === "add-label") return;
+        field.addEventListener(field.tagName === "SELECT" ? "change" : "input", () => {
+          this._detailDraft[field.dataset.field] = field.value;
+        });
+      });
+      const addLabelSelect = detailPopup.querySelector('[data-field="add-label"]');
+      if (addLabelSelect) {
+        addLabelSelect.addEventListener("change", () => {
+          const value = addLabelSelect.value;
+          if (value && !this._detailDraft.labelIds.includes(value)) {
+            this._detailDraft.labelIds.push(value);
+          }
+          this._render();
+        });
+      }
     }
 
     const toastContainer = root.querySelector(".toast-container");

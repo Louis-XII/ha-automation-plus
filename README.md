@@ -15,11 +15,9 @@ est en cours de développement pour les configurations volumineuses.
 
 ## Statut
 
-🚧 v0.6.6 — menu Options (3 points) fonctionnel sur chaque automatisation du
-Dashboard : détail éditable (nom, icône, pièce, catégorie, étiquettes),
-activation, téléchargement (mode dossier dédié) et suppression avec
-confirmation. Ajout d'un bouton Trier indépendant du Regroupement existant
-(corrigé au passage).
+🚧 v0.6.7 — contraste des blocs de la page Réglages amélioré : fond
+légèrement teinté (adaptatif à tout thème HA) au lieu de quasi identique au
+fond de page avec certains thèmes clairs.
 Historique détaillé des versions : voir la
 [page Releases](https://github.com/Louis-XII/ha-automation-plus/releases).
 

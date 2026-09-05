@@ -7,7 +7,7 @@
 // affiché dans le badge du header ; DEBUG_BUILD_DATE n'est plus dans le
 // header (retiré sur demande) et sera affiché dans le futur bloc « À propos »
 // de la page Réglages (pas encore codée).
-const DEBUG_VERSION = "0.6.6";
+const DEBUG_VERSION = "0.6.7";
 const DEBUG_BUILD_DATE = "2026-09-05";
 
 const REPO_URL = "https://github.com/Louis-XII/ha-automation-plus";
@@ -2040,7 +2040,7 @@ class AutomationPlusPanel extends HTMLElement {
           gap: 16px;
         }
         .settings-block {
-          background: var(--card-background-color, #fff);
+          background: color-mix(in srgb, var(--card-background-color, #fff) 94%, var(--primary-text-color, #212121) 6%);
           border: 1px solid var(--divider-color, #e0e0e0);
           border-radius: 12px;
           padding: 20px;

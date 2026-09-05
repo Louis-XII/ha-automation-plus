@@ -16,9 +16,10 @@ est en cours de développement pour les configurations volumineuses.
 
 ## Statut
 
-🚧 v0.6.4 — correctif de la page blanche persistante depuis la v0.6.0 :
-`hass` pouvait être assigné au panel avant son insertion dans le DOM par
-Home Assistant, provoquant une exception JS qui empêchait l'affichage.
+🚧 v0.6.5 — correctif : le header/toolbar figé au défilement (page Réglages
+et Dashboard) ne l'était plus, régression introduite par la v0.6.4 ; retour
+à la valeur qui fonctionne réellement en conditions HA. Alignement vertical
+de l'icône dans les badges d'étiquette également corrigé.
 Historique détaillé des versions : voir la
 [page Releases](https://github.com/Louis-XII/ha-automation-plus/releases).
 

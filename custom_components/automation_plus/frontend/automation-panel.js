@@ -7,7 +7,7 @@
 // affiché dans le badge du header ; DEBUG_BUILD_DATE n'est plus dans le
 // header (retiré sur demande) et sera affiché dans le futur bloc « À propos »
 // de la page Réglages (pas encore codée).
-const DEBUG_VERSION = "0.6.3";
+const DEBUG_VERSION = "0.6.4";
 const DEBUG_BUILD_DATE = "2026-09-04";
 
 const REPO_URL = "https://github.com/Louis-XII/ha-automation-plus";
@@ -188,7 +188,7 @@ class AutomationPlusPanel extends HTMLElement {
         input.setSelectionRange(selectionStart, selectionEnd);
       }
     }
-    const newScrollEl = root.querySelector(scrollSelector);
+    const newScrollEl = root && root.querySelector(scrollSelector);
     if (newScrollEl) {
       newScrollEl.scrollTop = scrollTop;
     }
@@ -560,7 +560,7 @@ class AutomationPlusPanel extends HTMLElement {
   async _checkConfig() {
     if (!this._hass || this._configCheckState.loading) return;
     this._configCheckState = { loading: true, result: null, error: false };
-    this._render();
+    this._renderPreservingFocus();
     try {
       const result = await this._hass.callApi("GET", API_PATHS.configCheck);
       this._configCheckState = { loading: false, result, error: false };
@@ -569,13 +569,13 @@ class AutomationPlusPanel extends HTMLElement {
       console.error("AutomationPlus: échec de la vérification de configuration", err);
       this._configCheckState = { loading: false, result: null, error: true };
     }
-    this._render();
+    this._renderPreservingFocus();
   }
 
   async _checkYaml() {
     if (!this._hass || this._yamlCheckState.loading) return;
     this._yamlCheckState = { loading: true, files: null, error: false, checkedAt: this._yamlCheckState.checkedAt };
-    this._render();
+    this._renderPreservingFocus();
     try {
       const { files } = await this._hass.callApi("GET", API_PATHS.yamlCheck);
       this._yamlCheckState = { loading: false, files, error: false, checkedAt: new Date() };
@@ -584,7 +584,7 @@ class AutomationPlusPanel extends HTMLElement {
       console.error("AutomationPlus: échec de la vérification YAML", err);
       this._yamlCheckState = { loading: false, files: null, error: true, checkedAt: this._yamlCheckState.checkedAt };
     }
-    this._render();
+    this._renderPreservingFocus();
   }
 
   // Téléchargement d'un fichier protégé par l'auth HA : pas de <a href>
@@ -821,7 +821,7 @@ class AutomationPlusPanel extends HTMLElement {
           display: flex;
           flex-direction: column;
           position: relative;
-          height: 100vh;
+          height: 100%;
           overflow: hidden;
           font-family: var(--paper-font-body1_-_font-family, sans-serif);
         }

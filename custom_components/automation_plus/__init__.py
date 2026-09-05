@@ -46,15 +46,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         webcomponent_name="automation-plus-panel",
         sidebar_title=PANEL_TITLE,
         sidebar_icon=PANEL_ICON,
-        # js_url (script classique) plutôt que module_url : notre panel
-        # n'utilise ni import ni export (classe + customElements.define
-        # classiques), et seul js_url bénéficie de la déduplication
-        # JS_CACHE côté frontend HA (load-custom-panel.ts) — module_url
-        # recrée un <script type="module"> à chaque appel de _createPanel()
-        # sans cache, ce qui provoquait un cycle de création/destruction du
-        # panel en boucle (page blanche persistante, erreurs reactive-element
-        # côté HA), voir claude-integration/CHANGELOG.md.
-        js_url=f"{STATIC_PATH}/{FRONTEND_JS}?v={integration.version}",
+        # module_url (pas js_url) : un script module a un scope isolé par
+        # module, donc une ré-exécution après bump de version (URL différente)
+        # ne peut jamais provoquer de redéclaration `const`/`class` en conflit
+        # dans le scope global de la page HA — contrairement à js_url, qui
+        # partage le scope global de la page (voir claude-integration/
+        # CHANGELOG.md pour l'analyse complète).
+        module_url=f"{STATIC_PATH}/{FRONTEND_JS}?v={integration.version}",
         require_admin=True,
     )
 

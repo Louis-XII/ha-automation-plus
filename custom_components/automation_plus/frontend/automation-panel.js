@@ -7,7 +7,7 @@
 // affiché dans le badge du header ; DEBUG_BUILD_DATE n'est plus dans le
 // header (retiré sur demande) et sera affiché dans le futur bloc « À propos »
 // de la page Réglages (pas encore codée).
-const DEBUG_VERSION = "0.6.7";
+const DEBUG_VERSION = "0.6.8";
 const DEBUG_BUILD_DATE = "2026-09-05";
 
 const REPO_URL = "https://github.com/Louis-XII/ha-automation-plus";
@@ -153,6 +153,35 @@ class AutomationPlusPanel extends HTMLElement {
     this._categoryRegistry = new Map();
     this._registriesLoaded = false;
     this._registriesLoading = false;
+
+    // Snapshot (state|friendly_name|icon) des entités automation.* au
+    // dernier rendu réel — permet à set hass() de sauter le re-render
+    // complet quand rien de visible n'a changé, voir _automationSnapshot().
+    this._lastAutomationSnapshot = null;
+  }
+
+  // Instantané minimal des entités automation.* pertinentes pour le rendu
+  // (voir _getAutomations()) — sert uniquement à détecter si un re-render
+  // est nécessaire, jamais utilisé comme source de données pour l'affichage.
+  _automationSnapshot(hass) {
+    const snapshot = new Map();
+    if (!hass || !hass.states) return snapshot;
+    for (const stateObj of Object.values(hass.states)) {
+      if (!stateObj.entity_id.startsWith("automation.")) continue;
+      const attributes = stateObj.attributes || {};
+      snapshot.set(stateObj.entity_id, `${stateObj.state}|${attributes.friendly_name || ""}|${attributes.icon || ""}`);
+    }
+    return snapshot;
+  }
+
+  // Compare deux snapshots _automationSnapshot() — true si identiques
+  // (mêmes clés, mêmes valeurs).
+  _snapshotsEqual(a, b) {
+    if (a.size !== b.size) return false;
+    for (const [entityId, value] of a) {
+      if (b.get(entityId) !== value) return false;
+    }
+    return true;
   }
 
   // localStorage peut échouer (navigation privée, stockage désactivé) —
@@ -198,6 +227,29 @@ class AutomationPlusPanel extends HTMLElement {
   set hass(value) {
     const isFirstAssignment = !this._hass;
     this._hass = value;
+
+    // HA réassigne hass à chaque changement d'état de n'importe quelle
+    // entité de l'installation, pas seulement les automatisations — un
+    // _renderPreservingFocus() complet à chaque fois recrée .scroll-area et
+    // casse l'inertie du scroll (trackpad Mac, momentum tactile iPad). On ne
+    // re-render que si un changement visible pour ce panel a réellement eu
+    // lieu, voir _automationSnapshot()/_snapshotsEqual().
+    const snapshot = this._automationSnapshot(value);
+    const snapshotChanged = !this._lastAutomationSnapshot || !this._snapshotsEqual(this._lastAutomationSnapshot, snapshot);
+    if (!isFirstAssignment && !snapshotChanged) {
+      return;
+    }
+    this._lastAutomationSnapshot = snapshot;
+
+    // .options-menu (position: fixed, voir _positionOptionsMenu) n'est
+    // repositionné qu'au clic d'ouverture — un re-render déclenché par hass
+    // le recrée sans coordonnées (saut visuel) ou fait rejouer la
+    // restauration de scrollTop (voir _renderPreservingFocus) qui déclenche
+    // à tort l'écouteur de fermeture au scroll. On ferme donc le menu de
+    // façon proactive à chaque re-render décidé ici plutôt que de compter
+    // sur ces effets de bord.
+    this._optionsMenuOpenFor = null;
+
     this._renderPreservingFocus();
     if (isFirstAssignment) {
       this._loadRegistries();
@@ -618,6 +670,28 @@ class AutomationPlusPanel extends HTMLElement {
     return this._getAutomations().find((a) => a.entity_id === entityId) || null;
   }
 
+  // Positionne le menu Options (.options-menu, position: fixed) par rapport
+  // au bouton kebab cliqué — nécessaire depuis le passage à position: fixed
+  // (voir _renderOptionsMenu) qui échappe aux overflow:hidden/auto ancêtres
+  // mais n'est plus positionné par le flux CSS normal. Bascule vers le haut
+  // si l'espace sous le bouton est insuffisant pour la hauteur du menu.
+  _positionOptionsMenu(button, menuEl) {
+    const buttonRect = button.getBoundingClientRect();
+    const menuRect = menuEl.getBoundingClientRect();
+    const viewportHeight = window.innerHeight;
+    const spaceBelow = viewportHeight - buttonRect.bottom;
+    const openUpward = spaceBelow < menuRect.height + 8 && buttonRect.top > menuRect.height + 8;
+
+    menuEl.style.left = `${Math.max(8, buttonRect.right - menuRect.width)}px`;
+    if (openUpward) {
+      menuEl.style.top = "auto";
+      menuEl.style.bottom = `${viewportHeight - buttonRect.top + 4}px`;
+    } else {
+      menuEl.style.bottom = "auto";
+      menuEl.style.top = `${buttonRect.bottom + 4}px`;
+    }
+  }
+
   // Popup de confirmation de suppression (menu Options > Supprimer, design
   // pen `DCk3N`) — un seul à la fois (_deleteConfirmFor), fermé par le
   // backdrop, la croix ou Annuler tant que _deleteInProgress est faux.
@@ -863,13 +937,33 @@ class AutomationPlusPanel extends HTMLElement {
       this._showErrorToast("Téléchargement indisponible pour cette automatisation.");
       return;
     }
+    // Ouverture de la fenêtre synchrone, dans le geste utilisateur (clic) —
+    // un window.open() après l'await du callWS ci-dessous perd le lien avec
+    // le clic et se fait bloquer silencieusement comme pop-up par la plupart
+    // des navigateurs (Safari en tête). On ouvre une fenêtre vide tout de
+    // suite, puis on la redirige une fois l'URL signée reçue. Le feature
+    // "noopener" n'est volontairement PAS passé à window.open() : dès qu'il
+    // est présent, la spec impose que window.open() retourne null (aucune
+    // référence exploitable), ce qui casserait entièrement ce mécanisme.
+    // On coupe quand même la référence inverse via win.opener = null
+    // (équivalent), la cible étant de toute façon same-origin (API HA).
+    const win = window.open("", "_blank");
+    if (win) win.opener = null;
+    if (!win) {
+      this._showErrorToast("Autorisez les pop-ups pour télécharger ce fichier.");
+      return;
+    }
     try {
       const signed = await this._hass.callWS({
         type: "auth/sign_path",
         path: `/api/${API_PATHS.automations}/${automation.id}`,
       });
-      window.open(signed.path, "_blank", "noopener,noreferrer");
+      if (!signed || !signed.path) {
+        throw new Error("Réponse auth/sign_path sans champ path");
+      }
+      win.location = signed.path;
     } catch (err) {
+      win.close();
       // eslint-disable-next-line no-console
       console.error("AutomationPlus: échec du téléchargement d'automatisation", automation.entity_id, err);
       this._showErrorToast(`Impossible de télécharger « ${automation.name} ».`);
@@ -963,6 +1057,11 @@ class AutomationPlusPanel extends HTMLElement {
   _renderListOnly() {
     const container = this.shadowRoot && this.shadowRoot.querySelector(".list-container");
     if (!container) return;
+    // Voir set hass() : un menu Options (position: fixed) recréé par ce
+    // remplacement d'innerHTML perdrait ses coordonnées — fermé par
+    // précaution plutôt que repositionné (cas rare : taper dans la
+    // recherche pendant qu'un menu de ligne est ouvert).
+    this._optionsMenuOpenFor = null;
     container.innerHTML = this._renderBody();
   }
 
@@ -1063,10 +1162,26 @@ class AutomationPlusPanel extends HTMLElement {
   // une URL signée à usage court plutôt qu'un token exposé côté client.
   async _exportAutomations() {
     if (!this._hass) return;
+    // Voir _downloadAutomation() : fenêtre ouverte synchrone dans le geste
+    // utilisateur, redirigée une fois l'URL signée reçue — un window.open()
+    // après l'await se fait bloquer silencieusement par le navigateur. Pas
+    // de "noopener" dans les features : la spec impose alors un retour null,
+    // ce qui casserait tout le mécanisme (win.opener = null fait le même
+    // travail, cible same-origin de toute façon).
+    const win = window.open("", "_blank");
+    if (win) win.opener = null;
+    if (!win) {
+      this._showErrorToast("Autorisez les pop-ups pour exporter les automatisations.");
+      return;
+    }
     try {
       const signed = await this._hass.callWS({ type: "auth/sign_path", path: `/api/${API_PATHS.export}` });
-      window.open(signed.path, "_blank", "noopener,noreferrer");
+      if (!signed || !signed.path) {
+        throw new Error("Réponse auth/sign_path sans champ path");
+      }
+      win.location = signed.path;
     } catch (err) {
+      win.close();
       // eslint-disable-next-line no-console
       console.error("AutomationPlus: échec de l'export des automatisations", err);
       this._showErrorToast("Impossible d'exporter les automatisations.");
@@ -1689,10 +1804,11 @@ class AutomationPlusPanel extends HTMLElement {
           background: var(--divider-color, #e0e0e0);
         }
         .options-menu {
-          position: absolute;
-          top: calc(100% + 4px);
-          right: 0;
-          left: auto;
+          /* position: fixed calculée en JS (_positionOptionsMenu) — top/left
+             posés dynamiquement, échappe ainsi aux overflow:hidden/auto de
+             .automation-table/.scroll-area qui le rognaient selon la ligne
+             (voir issue scroll/menu kebab). */
+          position: fixed;
           min-width: 220px;
           background: var(--card-background-color, #fff);
           border-radius: 8px;
@@ -2312,6 +2428,24 @@ class AutomationPlusPanel extends HTMLElement {
   _attachListeners() {
     const root = this.shadowRoot;
 
+    // .options-menu est en position: fixed (calculé au clic, voir
+    // _positionOptionsMenu) : il ne suit plus la ligne pendant un scroll de
+    // .scroll-area comme le ferait un position: absolute — on le ferme donc
+    // au scroll plutôt que de le laisser se décaler visuellement.
+    const scrollArea = root.querySelector(".scroll-area");
+    if (scrollArea && this._optionsMenuOpenFor) {
+      scrollArea.addEventListener(
+        "scroll",
+        () => {
+          if (this._optionsMenuOpenFor) {
+            this._optionsMenuOpenFor = null;
+            this._render();
+          }
+        },
+        { once: true }
+      );
+    }
+
     const searchInput = root.querySelector(".search-input");
     if (searchInput) {
       // Re-render partiel uniquement (_renderListOnly) : un _render() complet
@@ -2410,8 +2544,19 @@ class AutomationPlusPanel extends HTMLElement {
         const optionsBtn = event.target.closest(".options-btn");
         if (optionsBtn) {
           const id = optionsBtn.dataset.entityId;
-          this._optionsMenuOpenFor = this._optionsMenuOpenFor === id ? null : id;
+          const opening = this._optionsMenuOpenFor !== id;
+          this._optionsMenuOpenFor = opening ? id : null;
           this._render();
+          if (opening) {
+            // .options-menu est en position: fixed (voir CSS) — un seul
+            // ouvert à la fois, positionné par rapport à son bouton kebab
+            // (frère dans .options-wrap, voir _renderAutomationRow).
+            const menuEl = root.querySelector(".options-menu");
+            const newBtn = menuEl && menuEl.parentElement.querySelector(".options-btn");
+            if (menuEl && newBtn) {
+              this._positionOptionsMenu(newBtn, menuEl);
+            }
+          }
           return;
         }
 

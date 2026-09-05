@@ -15,9 +15,9 @@ est en cours de développement pour les configurations volumineuses.
 
 ## Statut
 
-🚧 v0.6.7 — contraste des blocs de la page Réglages amélioré : fond
-légèrement teinté (adaptatif à tout thème HA) au lieu de quasi identique au
-fond de page avec certains thèmes clairs.
+🚧 v0.6.8 — scroll de la liste plus fluide (trackpad Mac, tactile iPad), menu
+Options (kebab) affiché de façon cohérente quelle que soit la ligne, export
+des automatisations à nouveau fonctionnel.
 Historique détaillé des versions : voir la
 [page Releases](https://github.com/Louis-XII/ha-automation-plus/releases).
 

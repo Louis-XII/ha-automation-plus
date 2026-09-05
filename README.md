@@ -1,4 +1,4 @@
-# AutomationPlus
+![AutomationPlus](./images/logo.png)
 
 Panel Home Assistant (via HACS) pour visualiser et gérer les automatisations.
 
@@ -15,9 +15,9 @@ est en cours de développement pour les configurations volumineuses.
 
 ## Statut
 
-🚧 v0.6.8 — scroll de la liste plus fluide (trackpad Mac, tactile iPad), menu
-Options (kebab) affiché de façon cohérente quelle que soit la ligne, export
-des automatisations à nouveau fonctionnel.
+🚧 v0.6.9 — nettoyage technique mineur : réponses d'erreur plus propres sur
+requête malformée, bouton « Signaler un bug » plus robuste, petites
+corrections internes sans impact fonctionnel majeur.
 Historique détaillé des versions : voir la
 [page Releases](https://github.com/Louis-XII/ha-automation-plus/releases).
 

@@ -10,6 +10,7 @@ dossier arbitraire.
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 
@@ -79,7 +80,10 @@ class AutomationPlusSettingsView(HomeAssistantView):
         if entry is None:
             return self.json_message("Intégration non configurée.", status_code=404)
 
-        body = await request.json()
+        try:
+            body = await request.json()
+        except json.JSONDecodeError:
+            return self.json_message("Corps de requête JSON invalide.", status_code=400)
         mode = body.get("storage_mode", DEFAULT_STORAGE_MODE)
 
         if mode not in (STORAGE_MODE_STANDARD, STORAGE_MODE_FOLDER):
@@ -116,7 +120,10 @@ class AutomationPlusAutomationView(HomeAssistantView):
                 status_code=409,
             )
 
-        body = await request.json()
+        try:
+            body = await request.json()
+        except json.JSONDecodeError:
+            return self.json_message("Corps de requête JSON invalide.", status_code=400)
         config = body.get("config")
         if not isinstance(config, dict):
             return self.json_message("Le champ 'config' (objet) est requis.", status_code=400)
@@ -147,7 +154,7 @@ class AutomationPlusAutomationItemView(HomeAssistantView):
     name = "api:automation_plus:automations:item"
     requires_admin = True
 
-    async def get(self, request: web.Request, automation_id: str) -> web.Response:
+    async def get(self, request: web.Request, automation_id: str) -> web.StreamResponse:
         hass: HomeAssistant = request.app["hass"]
         entry = _current_entry(hass)
         options = entry.options if entry else {}
@@ -270,7 +277,7 @@ class AutomationPlusExportView(HomeAssistantView):
     name = "api:automation_plus:export"
     requires_admin = True
 
-    async def get(self, request: web.Request) -> web.Response:
+    async def get(self, request: web.Request) -> web.StreamResponse:
         hass: HomeAssistant = request.app["hass"]
         entry = _current_entry(hass)
         options = entry.options if entry else {}

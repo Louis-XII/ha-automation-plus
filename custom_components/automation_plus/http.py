@@ -19,6 +19,7 @@ from homeassistant.core import HomeAssistant
 
 from . import storage
 from .const import (
+    API_AUTOMATION_ITEM_URL,
     API_AUTOMATIONS_URL,
     API_CONFIG_CHECK_URL,
     API_EXPORT_URL,
@@ -131,6 +132,73 @@ class AutomationPlusAutomationView(HomeAssistantView):
         await hass.services.async_call("automation", "reload", blocking=True)
 
         return self.json({"id": automation_id, "path": written_path})
+
+
+class AutomationPlusAutomationItemView(HomeAssistantView):
+    """Télécharger (GET) ou supprimer (DELETE) une automatisation par son id.
+
+    Mode dossier dédié uniquement (menu Options d'une ligne, issue #55) : en
+    mode fichier standard, le panel utilise directement l'API REST native de
+    HA (`DELETE /api/config/automation/config/<id>`, pas de "Télécharger"
+    proposé dans ce mode côté JS) — voir ARCHITECTURE.md §1.
+    """
+
+    url = API_AUTOMATION_ITEM_URL
+    name = "api:automation_plus:automations:item"
+    requires_admin = True
+
+    async def get(self, request: web.Request, automation_id: str) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        entry = _current_entry(hass)
+        options = entry.options if entry else {}
+        mode = options.get(CONF_STORAGE_MODE, DEFAULT_STORAGE_MODE)
+
+        if mode != STORAGE_MODE_FOLDER:
+            return self.json_message(
+                "Téléchargement individuel réservé au mode dossier dédié.", status_code=409
+            )
+
+        try:
+            storage.validate_automation_id(automation_id)
+            target = storage.resolve_safe_path(
+                _config_dir(hass), f"{DEFAULT_STORAGE_PATH}/{automation_id}.yaml"
+            )
+        except storage.UnsafePathError as err:
+            return self.json_message(str(err), status_code=400)
+
+        exists = await hass.async_add_executor_job(target.is_file)
+        if not exists:
+            return self.json_message("Automatisation introuvable.", status_code=404)
+
+        return web.FileResponse(
+            path=target,
+            headers={"Content-Disposition": f'attachment; filename="{automation_id}.yaml"'},
+        )
+
+    async def delete(self, request: web.Request, automation_id: str) -> web.Response:
+        hass: HomeAssistant = request.app["hass"]
+        entry = _current_entry(hass)
+        options = entry.options if entry else {}
+        mode = options.get(CONF_STORAGE_MODE, DEFAULT_STORAGE_MODE)
+
+        if mode != STORAGE_MODE_FOLDER:
+            return self.json_message(
+                "Suppression dossier dédié appelée alors que le mode actif est standard.",
+                status_code=409,
+            )
+
+        try:
+            deleted = await hass.async_add_executor_job(
+                storage.delete_automation_file, _config_dir(hass), DEFAULT_STORAGE_PATH, automation_id
+            )
+        except storage.UnsafePathError as err:
+            return self.json_message(str(err), status_code=400)
+
+        if not deleted:
+            return self.json_message("Automatisation introuvable.", status_code=404)
+
+        await hass.services.async_call("automation", "reload", blocking=True)
+        return self.json({"deleted": True, "id": automation_id})
 
 
 class AutomationPlusConfigCheckView(HomeAssistantView):
@@ -256,6 +324,7 @@ class AutomationPlusYamlCheckView(HomeAssistantView):
 VIEWS = (
     AutomationPlusSettingsView,
     AutomationPlusAutomationView,
+    AutomationPlusAutomationItemView,
     AutomationPlusConfigCheckView,
     AutomationPlusExportView,
     AutomationPlusYamlCheckView,

@@ -31,6 +31,12 @@ CONFIGURATION_YAML_FOLDER_DIRECTIVE = f"!include_dir_merge_list {DEFAULT_STORAGE
 # Routes HTTP de l'intégration (voir http.py).
 API_SETTINGS_URL = f"/api/{DOMAIN}/settings"
 API_AUTOMATIONS_URL = f"/api/{DOMAIN}/automations"
+# Item individuel (mode dossier dédié uniquement) : téléchargement (GET) et
+# suppression (DELETE) d'une automatisation par son id — voir
+# AutomationPlusAutomationItemView. `automation_id` : même identifiant que le
+# nom de fichier <id>.yaml (voir storage.write_automation_file) et que
+# entity_registry.unique_id pour une entité automation.*.
+API_AUTOMATION_ITEM_URL = f"{API_AUTOMATIONS_URL}/{{automation_id}}"
 API_CONFIG_CHECK_URL = f"/api/{DOMAIN}/config_check"
 API_EXPORT_URL = f"/api/{DOMAIN}/export"
 API_YAML_CHECK_URL = f"/api/{DOMAIN}/yaml_check"

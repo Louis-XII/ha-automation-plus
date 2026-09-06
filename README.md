@@ -1,19 +1,20 @@
 ![AutomationPlus](./images/logo.png)
 
-[![Version](https://img.shields.io/github/v/release/Louis-XII/ha-automation-plus?label=version&color=4f8eff&logo=github&logoColor=lightgrey)](https://github.com/Louis-XII/ha-automation-plus/releases/latest)
-[![Date de release](https://img.shields.io/github/release-date/Louis-XII/ha-automation-plus?logo=github&logoColor=lightgrey)](https://github.com/Louis-XII/ha-automation-plus/releases/latest)
-[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?logo=home-assistant&logoColor=lightgrey)](https://hacs.xyz/docs/faq/custom_repositories/)
-[![Home Assistant minimum](https://img.shields.io/badge/Home%20Assistant-2024.1.0%2B-41BDF5?logo=home-assistant&logoColor=lightgrey)](https://www.home-assistant.io/)
-[![License: GPL-3.0](https://img.shields.io/github/license/Louis-XII/ha-automation-plus?logo=github&logoColor=lightgrey)](LICENSE)
+[![Version](https://img.shields.io/github/v/release/Louis-XII/ha-automation-plus?label=version&color=4f8eff&logo=github&logoColor=9a9a9a)](https://github.com/Louis-XII/ha-automation-plus/releases/latest)
+[![Date de release](https://img.shields.io/github/release-date/Louis-XII/ha-automation-plus?logo=github&logoColor=9a9a9a)](https://github.com/Louis-XII/ha-automation-plus/releases/latest)
+[![License: GPL-3.0](https://img.shields.io/github/license/Louis-XII/ha-automation-plus?logo=github&logoColor=9a9a9a)](LICENSE)
 <br/>
-[![Validate for HACS](https://img.shields.io/github/actions/workflow/status/Louis-XII/ha-automation-plus/hacs.yml?branch=main&label=Validate%20for%20HACS&logo=github&logoColor=lightgrey)](https://github.com/Louis-XII/ha-automation-plus/actions/workflows/hacs.yml)
-[![Validate with hassfest](https://img.shields.io/github/actions/workflow/status/Louis-XII/ha-automation-plus/hassfest.yml?branch=main&label=Validate%20with%20hassfest&logo=github&logoColor=lightgrey)](https://github.com/Louis-XII/ha-automation-plus/actions/workflows/hassfest.yml)
+[![Validate for HACS](https://img.shields.io/github/actions/workflow/status/Louis-XII/ha-automation-plus/hacs.yml?branch=main&label=Validate%20for%20HACS&logo=github&logoColor=9a9a9a)](https://github.com/Louis-XII/ha-automation-plus/actions/workflows/hacs.yml)
+[![Validate with hassfest](https://img.shields.io/github/actions/workflow/status/Louis-XII/ha-automation-plus/hassfest.yml?branch=main&label=Validate%20with%20hassfest&logo=github&logoColor=9a9a9a)](https://github.com/Louis-XII/ha-automation-plus/actions/workflows/hassfest.yml)
 <br/>
-[![Issues ouvertes](https://img.shields.io/github/issues/Louis-XII/ha-automation-plus?logo=github&logoColor=lightgrey)](https://github.com/Louis-XII/ha-automation-plus/issues)
-[![Issues fermées](https://img.shields.io/github/issues-closed/Louis-XII/ha-automation-plus?logo=github&logoColor=lightgrey)](https://github.com/Louis-XII/ha-automation-plus/issues?q=is%3Aissue+is%3Aclosed)
-[![Dernier commit](https://img.shields.io/github/last-commit/Louis-XII/ha-automation-plus?logo=github&logoColor=lightgrey)](https://github.com/Louis-XII/ha-automation-plus/commits/main)
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?logo=home-assistant&logoColor=9a9a9a)](https://hacs.xyz/docs/faq/custom_repositories/)
+[![Home Assistant minimum](https://img.shields.io/badge/Home%20Assistant-2024.1.0%2B-41BDF5?logo=home-assistant&logoColor=9a9a9a)](https://www.home-assistant.io/)
 <br/>
-[![Installations HA](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fanalytics.home-assistant.io%2Fcustom_integrations.json&label=installs%20HA&query=%24.automation_plus.total&logo=home-assistant&logoColor=lightgrey)](https://analytics.home-assistant.io/)
+[![Dernier commit](https://img.shields.io/github/last-commit/Louis-XII/ha-automation-plus?logo=github&logoColor=9a9a9a)](https://github.com/Louis-XII/ha-automation-plus/commits/main)
+[![Issues ouvertes](https://img.shields.io/github/issues/Louis-XII/ha-automation-plus?logo=github&logoColor=9a9a9a)](https://github.com/Louis-XII/ha-automation-plus/issues)
+[![Issues fermées](https://img.shields.io/github/issues-closed/Louis-XII/ha-automation-plus?logo=github&logoColor=9a9a9a)](https://github.com/Louis-XII/ha-automation-plus/issues?q=is%3Aissue+is%3Aclosed)
+<br/>
+[![Installations HA](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fanalytics.home-assistant.io%2Fcustom_integrations.json&label=installs%20HA&query=%24.automation_plus.total&logo=home-assistant&logoColor=9a9a9a)](https://analytics.home-assistant.io/)
 [![GitHub Stars](https://img.shields.io/github/stars/Louis-XII/ha-automation-plus)](https://github.com/Louis-XII/ha-automation-plus/stargazers)
 
 Panel Home Assistant (via HACS) pour visualiser et gérer les automatisations.

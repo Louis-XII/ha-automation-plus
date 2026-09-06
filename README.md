@@ -30,14 +30,6 @@ configuration est cohérente et exporter ses automatisations. Un mode de
 stockage alternatif (un fichier par automatisation, dans un dossier dédié)
 est en cours de développement pour les configurations volumineuses.
 
-## Statut
-
-🚧 v0.6.12-beta.3 — pre-release en test : export/téléchargement fiabilisé
-dans l'app Companion, couleurs d'étiquettes composées corrigées, bouton Aide
-réintégré, wordmark illustré dans le header, bloc Raccourcis dans Réglages.
-Historique détaillé des versions : voir la
-[page Releases](https://github.com/Louis-XII/ha-automation-plus/releases).
-
 ## Installation
 
 ### Rapide (via HACS)

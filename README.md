@@ -28,10 +28,10 @@ est en cours de développement pour les configurations volumineuses.
 
 ## Statut
 
-🚧 v0.6.9 — nettoyage technique mineur : réponses d'erreur plus propres sur
-requête malformée, bouton « Signaler un bug » plus robuste, petites
-corrections internes sans impact fonctionnel majeur.
-Historique détaillé des versions : voir la
+🚧 v0.6.12-beta.1 — pre-release en test : 8 correctifs (dépendances manifest,
+faux positif de vérification YAML, robustesse XSS d'une chip étiquette, menu
+Options borné sur petit viewport, mode de stockage, popup Détail). Historique
+détaillé des versions : voir la
 [page Releases](https://github.com/Louis-XII/ha-automation-plus/releases).
 
 ## Installation (test)

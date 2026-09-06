@@ -23,7 +23,7 @@
 // affiché dans le badge du header ; DEBUG_BUILD_DATE n'est plus dans le
 // header (retiré sur demande) et sera affiché dans le futur bloc « À propos »
 // de la page Réglages (pas encore codée).
-const DEBUG_VERSION = "0.6.12-beta.2";
+const DEBUG_VERSION = "0.6.12-beta.3";
 const DEBUG_BUILD_DATE = "2026-09-06";
 
 const REPO_URL = "https://github.com/Louis-XII/ha-automation-plus";
@@ -1132,22 +1132,33 @@ class AutomationPlusPanel extends HTMLElement {
     }
   }
 
-  // Téléchargement d'un fichier protégé par l'auth HA : récupère une URL
-  // signée à usage court (auth/sign_path, même mécanisme que HA pour les
-  // backups/diagnostics) puis déclenche le téléchargement via un <a download>
-  // cliqué par script. Pas de window.open() : dans les apps Companion
-  // (Mac/Windows/mobile), basées sur une WebView embarquée, window.open()
-  // renvoie toujours null — il n'existe aucun réglage "pop-up" à activer
-  // pour corriger ça, contrairement à un vrai navigateur.
-  async _downloadSignedPath(path, errorMessage) {
+  // Téléchargement d'un fichier protégé par l'auth HA. Historique : d'abord
+  // window.open() (cassé dans les apps Companion, WebView embarquée — voir
+  // entrée changelog), puis une URL signée (auth/sign_path) redirigée via un
+  // <a download> — fonctionnait dans un vrai navigateur (confirmé Safari)
+  // mais restait silencieusement inopérant dans l'app Companion Mac : cette
+  // approche dépend de la détection d'un téléchargement par WebKit au niveau
+  // d'une navigation réseau (Content-Disposition), qui semble traitée
+  // différemment dans la WebView embarquée. On passe donc par un fetch
+  // authentifié (hass.fetchWithAuth(), API standard du frontend HA — ajoute
+  // le bearer token, gère le refresh) qui récupère le fichier en mémoire
+  // (Blob), puis un <a download> cliqué sur une URL blob: locale — une
+  // sauvegarde purement côté client, qui ne passe plus du tout par la
+  // navigation réseau ni par la détection de WebKit.
+  async _downloadAuthenticatedPath(path, errorMessage) {
+    let blobUrl = null;
     try {
-      const signed = await this._hass.callWS({ type: "auth/sign_path", path });
-      if (!signed || !signed.path) {
-        throw new Error("Réponse auth/sign_path sans champ path");
+      const response = await this._hass.fetchWithAuth(path);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
       }
+      const disposition = response.headers.get("content-disposition") || "";
+      const filenameMatch = disposition.match(/filename="?([^";]+)"?/);
+      const blob = await response.blob();
+      blobUrl = URL.createObjectURL(blob);
       const link = document.createElement("a");
-      link.href = signed.path;
-      link.setAttribute("download", "");
+      link.href = blobUrl;
+      link.download = filenameMatch ? filenameMatch[1] : "";
       link.style.display = "none";
       document.body.appendChild(link);
       link.click();
@@ -1156,18 +1167,22 @@ class AutomationPlusPanel extends HTMLElement {
       // eslint-disable-next-line no-console
       console.error("AutomationPlus: échec du téléchargement", path, err);
       this._showErrorToast(errorMessage);
+    } finally {
+      // Révocation différée : certaines WebView lisent le blob de façon
+      // asynchrone après le clic (délégué de téléchargement natif) — le
+      // révoquer immédiatement risquerait de couper la lecture en cours.
+      if (blobUrl) setTimeout(() => URL.revokeObjectURL(blobUrl), 4000);
     }
   }
 
   // Téléchargement d'un fichier individuel (mode dossier dédié uniquement,
-  // menu Options > Télécharger) — même mécanisme d'URL signée que
-  // _exportAutomations().
+  // menu Options > Télécharger) — voir _downloadAuthenticatedPath().
   async _downloadAutomation(automation) {
     if (!this._hass || !automation.id) {
       this._showErrorToast("Téléchargement indisponible pour cette automatisation.");
       return;
     }
-    await this._downloadSignedPath(
+    await this._downloadAuthenticatedPath(
       `/api/${API_PATHS.automations}/${automation.id}`,
       `Impossible de télécharger « ${automation.name} ».`
     );
@@ -1359,11 +1374,10 @@ class AutomationPlusPanel extends HTMLElement {
     this._renderPreservingFocus();
   }
 
-  // Voir _downloadSignedPath() : même mécanisme d'URL signée que
-  // _downloadAutomation().
+  // Voir _downloadAuthenticatedPath().
   async _exportAutomations() {
     if (!this._hass) return;
-    await this._downloadSignedPath(`/api/${API_PATHS.export}`, "Impossible d'exporter les automatisations.");
+    await this._downloadAuthenticatedPath(`/api/${API_PATHS.export}`, "Impossible d'exporter les automatisations.");
   }
 
   // Navigation vers une page HA native (issue #82, bloc Raccourcis) sans

@@ -32,10 +32,10 @@ est en cours de développement pour les configurations volumineuses.
 
 ## Statut
 
-🚧 v0.6.12-beta.2 — pre-release en test : 8 correctifs (dépendances manifest,
-faux positif de vérification YAML, robustesse XSS d'une chip étiquette, menu
-Options borné sur petit viewport, mode de stockage, popup Détail) + mention
-de licence oubliée corrigée. Historique détaillé des versions : voir la
+🚧 v0.6.12-beta.3 — pre-release en test : export/téléchargement fiabilisé
+dans l'app Companion, couleurs d'étiquettes composées corrigées, bouton Aide
+réintégré, wordmark illustré dans le header, bloc Raccourcis dans Réglages.
+Historique détaillé des versions : voir la
 [page Releases](https://github.com/Louis-XII/ha-automation-plus/releases).
 
 ## Installation

@@ -38,9 +38,26 @@ Options borné sur petit viewport, mode de stockage, popup Détail) + mention
 de licence oubliée corrigée. Historique détaillé des versions : voir la
 [page Releases](https://github.com/Louis-XII/ha-automation-plus/releases).
 
-## Installation (test)
+## Installation
 
-Voir [`info.md`](./info.md).
+### Rapide (via HACS)
+
+[![Ouvrir dans HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Louis-XII&repository=ha-automation-plus&category=integration)
+[![Ajouter l'intégration](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=automation_plus)
+
+**Ouvrir dans HACS** → installer **AutomationPlus** → redémarrer Home
+Assistant → **Ajouter l'intégration**.
+
+### Manuelle
+
+1. HACS → Intégrations → menu ⋮ → **Custom repositories** → coller l'URL
+   de ce dépôt, catégorie **Integration**
+2. Installer **AutomationPlus**
+3. Redémarrer Home Assistant
+4. Paramètres → Appareils et services → **Ajouter une intégration** →
+   rechercher **AutomationPlus**
+
+Le panel apparaît dans la sidebar.
 
 ## Développement
 

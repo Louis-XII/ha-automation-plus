@@ -1423,7 +1423,7 @@ class AutomationPlusPanel extends HTMLElement {
           </a>
         </div>
         <p class="about-credits">AutomationPlus — intégration Home Assistant open source</p>
-        <p class="about-credits">${DEBUG_BUILD_DATE.slice(0, 4)} · MIT License · Développeur indépendant · 🇫🇷 codé en France</p>
+        <p class="about-credits">${DEBUG_BUILD_DATE.slice(0, 4)} · GPL-3.0 License · Développeur indépendant · 🇫🇷 codé en France</p>
       </div>
     `;
   }

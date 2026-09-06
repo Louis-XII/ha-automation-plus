@@ -83,7 +83,11 @@ const ERROR_TOAST_AUTO_DISMISS_MS = 5000;
 // sans accès internet sur une instance HA locale).
 const ICON_ARROW_LEFT = `<path d="M19 12H5"/><path d="m12 19-7-7 7-7"/>`;
 const ICON_BUG = `<path d="m8 2 1.88 1.88"/><path d="M14.12 3.88 16 2"/><path d="M9 7.13v-1a3.003 3.003 0 1 1 6 0v1"/><path d="M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6"/><path d="M12 20v-9"/><path d="M6.53 9C4.6 8.8 3 7.1 3 5"/><path d="M6 13H2"/><path d="M3 21c0-2.1 1.7-3.9 3.8-4"/><path d="M20.97 5c0 2.1-1.6 3.8-3.5 4"/><path d="M22 13h-4"/><path d="M17.2 17c2.1.1 3.8 1.9 3.8 4"/>`;
-const ICON_SETTINGS = `<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>`;
+// Bouton désactivé (#76) tant qu'aucun contenu d'aide n'existe — voir le
+// bouton "Aide" du header, pattern identique aux boutons "Bientôt
+// disponible" de la page Réglages (title + attribut disabled).
+const ICON_HELP_CIRCLE = `<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>`;
+const ICON_SETTINGS =`<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>`;
 const ICON_SEARCH = `<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>`;
 const ICON_LAYERS = `<path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/>`;
 const ICON_CHEVRON_DOWN = `<path d="m6 9 6 6 6-6"/>`;
@@ -119,13 +123,58 @@ function escapeHtml(value) {
 // Valide `label.color` (issu du label_registry HA) avant interpolation dans
 // un attribut `style` — escapeHtml() bloque la sortie de l'attribut mais pas
 // une valeur CSS malformée (ex. "red;background:...") qui casserait le rendu
-// de la chip (issue #71). Motif restrictif : hex #rgb/#rrggbb ou nom CSS
-// simple (lettres uniquement) — au moindre doute on retombe sur la couleur
-// par défaut plutôt que de risquer d'interpoler quoi que ce soit d'inattendu.
-const SAFE_CSS_COLOR_RE = /^(#[0-9a-fA-F]{3,8}|[a-zA-Z]+)$/;
+// de la chip (issue #71). Motif restrictif : hex #rgb/#rrggbb ou nom CSS/HA
+// simple (lettres + tirets, ex. "deep-orange") — au moindre doute on retombe
+// sur la couleur par défaut plutôt que de risquer d'interpoler quoi que ce
+// soit d'inattendu.
+const SAFE_CSS_COLOR_RE = /^(#[0-9a-fA-F]{3,8}|[a-zA-Z][a-zA-Z-]*)$/;
+
+// La palette de couleurs nommées de HA (sélecteur de couleur des labels)
+// inclut des noms composés ("deep-orange", "light-blue", "blue-grey"...) qui
+// ne sont PAS des mots-clés CSS valides — seuls les noms simples ("red",
+// "orange", "teal"...) le sont par coïncidence. HA les résout via une
+// variable CSS `--{nom}-color` définie globalement par son thème (voir
+// `computeCssColor()` dans home-assistant-frontend) ; on applique le même
+// mécanisme ici plutôt que d'interpoler le nom brut, qui échouait
+// silencieusement pour tout nom composé (retombait visuellement sur aucune
+// couleur, alors que safeLabelColor() avait pourtant validé la valeur).
+//
+// Filet de secours si cette variable CSS n'est pas définie (thème
+// personnalisé minimal qui ne la reprendrait pas) : valeurs hex exactes du
+// thème clair HA (`color.globals.ts`, home-assistant-frontend) plutôt que la
+// couleur grise par défaut — ne sert que dans ce cas résiduel, le mécanisme
+// var() ci-dessus reste prioritaire et s'adapte lui au thème clair/sombre.
+const HA_NAMED_COLORS = {
+  red: "#f44336",
+  pink: "#e91e63",
+  purple: "#926bc7",
+  "deep-purple": "#6e41ab",
+  indigo: "#3f51b5",
+  blue: "#2196f3",
+  "light-blue": "#03a9f4",
+  cyan: "#00bcd4",
+  teal: "#009688",
+  green: "#4caf50",
+  "light-green": "#8bc34a",
+  lime: "#cddc39",
+  yellow: "#ffeb3b",
+  amber: "#ffc107",
+  orange: "#ff9800",
+  "deep-orange": "#ff6f22",
+  brown: "#795548",
+  "light-grey": "#bdbdbd",
+  grey: "#9e9e9e",
+  "dark-grey": "#606060",
+  "blue-grey": "#607d8b",
+  black: "#000000",
+  white: "#ffffff",
+  disabled: "#bdbdbd",
+};
 
 function safeLabelColor(color) {
-  return typeof color === "string" && SAFE_CSS_COLOR_RE.test(color) ? color : DEFAULT_LABEL_COLOR;
+  if (typeof color !== "string" || !SAFE_CSS_COLOR_RE.test(color)) return DEFAULT_LABEL_COLOR;
+  if (color.startsWith("#")) return color;
+  return `var(--${color}-color, ${HA_NAMED_COLORS[color] || DEFAULT_LABEL_COLOR})`;
 }
 
 class AutomationPlusPanel extends HTMLElement {
@@ -523,8 +572,9 @@ class AutomationPlusPanel extends HTMLElement {
     const dataAttr = clickable ? ` data-label-id="${escapeHtml(label.id)}"` : "";
     // <ha-icon> : élément custom déjà défini globalement par le frontend HA
     // (le panel s'exécute dans la même page) — pas de dépendance CDN, et
-    // résout n'importe quelle icône mdi:* choisie pour l'étiquette sans
-    // avoir à embarquer un jeu d'icônes ici.
+    // résout n'importe quelle icône choisie pour l'étiquette (mdi:* ou tout
+    // autre jeu d'icônes enregistré côté HA, ex. via une intégration custom)
+    // sans avoir à embarquer un jeu d'icônes ici.
     const iconHtml = label.icon ? `<ha-icon icon="${escapeHtml(label.icon)}" class="chip-icon"></ha-icon>` : "";
     return `<span class="${classes}" style="${style}"${dataAttr}>${iconHtml}${escapeHtml(label.name)}</span>`;
   }
@@ -1493,6 +1543,10 @@ class AutomationPlusPanel extends HTMLElement {
           width: 22px;
           height: 22px;
         }
+        .icon-button:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
         h1 {
           font-size: 16px;
           font-weight: 700;
@@ -2431,6 +2485,9 @@ class AutomationPlusPanel extends HTMLElement {
         <div class="header-actions">
           <button class="icon-button report-bug-btn" title="Signaler un bug">
             ${this._icon(ICON_BUG, 22)}
+          </button>
+          <button class="icon-button" title="Bientôt disponible" disabled>
+            ${this._icon(ICON_HELP_CIRCLE, 22)}
           </button>
           <button class="icon-button settings-btn-header" title="Paramètres">
             ${this._icon(ICON_SETTINGS, 22)}

@@ -998,6 +998,33 @@ class AutomationPlusPanel extends HTMLElement {
     }
   }
 
+  // Téléchargement d'un fichier protégé par l'auth HA : récupère une URL
+  // signée à usage court (auth/sign_path, même mécanisme que HA pour les
+  // backups/diagnostics) puis déclenche le téléchargement via un <a download>
+  // cliqué par script. Pas de window.open() : dans les apps Companion
+  // (Mac/Windows/mobile), basées sur une WebView embarquée, window.open()
+  // renvoie toujours null — il n'existe aucun réglage "pop-up" à activer
+  // pour corriger ça, contrairement à un vrai navigateur.
+  async _downloadSignedPath(path, errorMessage) {
+    try {
+      const signed = await this._hass.callWS({ type: "auth/sign_path", path });
+      if (!signed || !signed.path) {
+        throw new Error("Réponse auth/sign_path sans champ path");
+      }
+      const link = document.createElement("a");
+      link.href = signed.path;
+      link.setAttribute("download", "");
+      link.style.display = "none";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("AutomationPlus: échec du téléchargement", path, err);
+      this._showErrorToast(errorMessage);
+    }
+  }
+
   // Téléchargement d'un fichier individuel (mode dossier dédié uniquement,
   // menu Options > Télécharger) — même mécanisme d'URL signée que
   // _exportAutomations().
@@ -1006,37 +1033,10 @@ class AutomationPlusPanel extends HTMLElement {
       this._showErrorToast("Téléchargement indisponible pour cette automatisation.");
       return;
     }
-    // Ouverture de la fenêtre synchrone, dans le geste utilisateur (clic) —
-    // un window.open() après l'await du callWS ci-dessous perd le lien avec
-    // le clic et se fait bloquer silencieusement comme pop-up par la plupart
-    // des navigateurs (Safari en tête). On ouvre une fenêtre vide tout de
-    // suite, puis on la redirige une fois l'URL signée reçue. Le feature
-    // "noopener" n'est volontairement PAS passé à window.open() : dès qu'il
-    // est présent, la spec impose que window.open() retourne null (aucune
-    // référence exploitable), ce qui casserait entièrement ce mécanisme.
-    // On coupe quand même la référence inverse via win.opener = null
-    // (équivalent), la cible étant de toute façon same-origin (API HA).
-    const win = window.open("", "_blank");
-    if (win) win.opener = null;
-    if (!win) {
-      this._showErrorToast("Autorisez les pop-ups pour télécharger ce fichier.");
-      return;
-    }
-    try {
-      const signed = await this._hass.callWS({
-        type: "auth/sign_path",
-        path: `/api/${API_PATHS.automations}/${automation.id}`,
-      });
-      if (!signed || !signed.path) {
-        throw new Error("Réponse auth/sign_path sans champ path");
-      }
-      win.location = signed.path;
-    } catch (err) {
-      win.close();
-      // eslint-disable-next-line no-console
-      console.error("AutomationPlus: échec du téléchargement d'automatisation", automation.entity_id, err);
-      this._showErrorToast(`Impossible de télécharger « ${automation.name} ».`);
-    }
+    await this._downloadSignedPath(
+      `/api/${API_PATHS.automations}/${automation.id}`,
+      `Impossible de télécharger « ${automation.name} ».`
+    );
   }
 
   // Dialogue natif HA (mêmes infos que si on cliquait sur l'entité ailleurs
@@ -1225,36 +1225,11 @@ class AutomationPlusPanel extends HTMLElement {
     this._renderPreservingFocus();
   }
 
-  // Téléchargement d'un fichier protégé par l'auth HA : pas de <a href>
-  // simple possible (API derrière bearer token), on passe par le mécanisme
-  // natif "signed path" (utilisé par HA lui-même pour backups/diagnostics) —
-  // une URL signée à usage court plutôt qu'un token exposé côté client.
+  // Voir _downloadSignedPath() : même mécanisme d'URL signée que
+  // _downloadAutomation().
   async _exportAutomations() {
     if (!this._hass) return;
-    // Voir _downloadAutomation() : fenêtre ouverte synchrone dans le geste
-    // utilisateur, redirigée une fois l'URL signée reçue — un window.open()
-    // après l'await se fait bloquer silencieusement par le navigateur. Pas
-    // de "noopener" dans les features : la spec impose alors un retour null,
-    // ce qui casserait tout le mécanisme (win.opener = null fait le même
-    // travail, cible same-origin de toute façon).
-    const win = window.open("", "_blank");
-    if (win) win.opener = null;
-    if (!win) {
-      this._showErrorToast("Autorisez les pop-ups pour exporter les automatisations.");
-      return;
-    }
-    try {
-      const signed = await this._hass.callWS({ type: "auth/sign_path", path: `/api/${API_PATHS.export}` });
-      if (!signed || !signed.path) {
-        throw new Error("Réponse auth/sign_path sans champ path");
-      }
-      win.location = signed.path;
-    } catch (err) {
-      win.close();
-      // eslint-disable-next-line no-console
-      console.error("AutomationPlus: échec de l'export des automatisations", err);
-      this._showErrorToast("Impossible d'exporter les automatisations.");
-    }
+    await this._downloadSignedPath(`/api/${API_PATHS.export}`, "Impossible d'exporter les automatisations.");
   }
 
   _renderSoonBadge() {

@@ -1,5 +1,12 @@
 ![AutomationPlus](./images/logo.png)
 
+[![Version](https://img.shields.io/github/v/release/Louis-XII/ha-automation-plus?label=version&color=4f8eff)](https://github.com/Louis-XII/ha-automation-plus/releases/latest)
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/docs/faq/custom_repositories/)
+[![License: GPL-3.0](https://img.shields.io/github/license/Louis-XII/ha-automation-plus)](LICENSE)
+[![Issues ouvertes](https://img.shields.io/github/issues/Louis-XII/ha-automation-plus)](https://github.com/Louis-XII/ha-automation-plus/issues)
+[![Dernier commit](https://img.shields.io/github/last-commit/Louis-XII/ha-automation-plus)](https://github.com/Louis-XII/ha-automation-plus/commits/main)
+[![Installations HA](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fanalytics.home-assistant.io%2Fcustom_integrations.json&label=installs%20HA&query=%24.automation_plus.total)](https://analytics.home-assistant.io/)
+
 Panel Home Assistant (via HACS) pour visualiser et gérer les automatisations.
 
 ## Présentation

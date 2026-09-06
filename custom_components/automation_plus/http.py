@@ -105,6 +105,14 @@ class AutomationPlusSettingsView(HomeAssistantView):
         if mode not in (STORAGE_MODE_STANDARD, STORAGE_MODE_FOLDER):
             return self.json_message(f"storage_mode invalide : {mode!r}", status_code=400)
 
+        # Création paresseuse à la bascule (issue #73) — async_setup_entry ne
+        # crée plus le dossier que si ce mode est déjà actif au démarrage,
+        # donc la première activation doit le faire elle-même.
+        if mode == STORAGE_MODE_FOLDER:
+            await hass.async_add_executor_job(
+                storage.ensure_folder, _config_dir(hass), DEFAULT_STORAGE_PATH
+            )
+
         hass.config_entries.async_update_entry(
             entry, options={**entry.options, CONF_STORAGE_MODE: mode}
         )

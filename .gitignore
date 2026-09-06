@@ -21,3 +21,6 @@ dev/
 
 # Config locale Claude Code (privée, propre à la machine)
 .claude/
+
+# Dossier identité (privé, non distribué)
+identity/

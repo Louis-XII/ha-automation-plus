@@ -26,7 +26,17 @@ from homeassistant.core import HomeAssistant
 from homeassistant.loader import async_get_integration
 
 from . import storage
-from .const import DEFAULT_STORAGE_PATH, DOMAIN, FRONTEND_JS, PANEL_ICON, PANEL_TITLE, PANEL_URL
+from .const import (
+    CONF_STORAGE_MODE,
+    DEFAULT_STORAGE_MODE,
+    DEFAULT_STORAGE_PATH,
+    DOMAIN,
+    FRONTEND_JS,
+    PANEL_ICON,
+    PANEL_TITLE,
+    PANEL_URL,
+    STORAGE_MODE_FOLDER,
+)
 from .http import VIEWS
 
 STATIC_PATH = f"/{DOMAIN}_static"
@@ -37,13 +47,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     frontend_dir = Path(__file__).parent / "frontend"
     integration = await async_get_integration(hass, DOMAIN)
 
-    # Dossier fixe du mode "Dossier dédié" — créé au premier lancement, pas
-    # de sélecteur de dossier (voir ARCHITECTURE.md §2, révisé 2026-09-03).
-    # Hors garde ci-dessous : doit pouvoir recréer le dossier s'il a été
-    # supprimé entre deux rechargements de l'entry.
-    await hass.async_add_executor_job(
-        storage.ensure_folder, Path(hass.config.config_dir), DEFAULT_STORAGE_PATH
-    )
+    # Dossier fixe du mode "Dossier dédié" — créé au premier lancement pour
+    # les utilisateurs déjà sur ce mode (ou recréé s'il a été supprimé entre
+    # deux rechargements de l'entry), jamais pour les utilisateurs en mode
+    # fichier standard (défaut de l'installation) : le dossier vide et non
+    # sollicité dans /config était sinon systématique (issue #73). La bascule
+    # vers le mode dossier dédié le crée elle-même paresseusement, voir
+    # AutomationPlusSettingsView.post() dans http.py.
+    if entry.options.get(CONF_STORAGE_MODE, DEFAULT_STORAGE_MODE) == STORAGE_MODE_FOLDER:
+        await hass.async_add_executor_job(
+            storage.ensure_folder, Path(hass.config.config_dir), DEFAULT_STORAGE_PATH
+        )
 
     # Instance unique (config_flow single_instance_allowed) : le chemin
     # statique et les routes ne sont enregistrés qu'une fois même si l'entry

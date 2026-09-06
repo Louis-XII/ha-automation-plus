@@ -1,5 +1,22 @@
 ![AutomationPlus](./images/logo.png)
 
+[![Version](https://img.shields.io/github/v/release/Louis-XII/ha-automation-plus?label=version&color=4f8eff&logo=github&logoColor=9a9a9a)](https://github.com/Louis-XII/ha-automation-plus/releases/latest)
+[![Date de release](https://img.shields.io/github/release-date/Louis-XII/ha-automation-plus?logo=github&logoColor=9a9a9a)](https://github.com/Louis-XII/ha-automation-plus/releases/latest)
+[![License: GPL-3.0](https://img.shields.io/github/license/Louis-XII/ha-automation-plus?logo=github&logoColor=9a9a9a)](LICENSE)
+<br/>
+[![Dernier commit](https://img.shields.io/github/last-commit/Louis-XII/ha-automation-plus?logo=github&logoColor=9a9a9a)](https://github.com/Louis-XII/ha-automation-plus/commits/main)
+[![Validate for HACS](https://img.shields.io/github/actions/workflow/status/Louis-XII/ha-automation-plus/hacs.yml?branch=main&label=Validate%20for%20HACS&logo=github&logoColor=9a9a9a)](https://github.com/Louis-XII/ha-automation-plus/actions/workflows/hacs.yml)
+[![Validate with hassfest](https://img.shields.io/github/actions/workflow/status/Louis-XII/ha-automation-plus/hassfest.yml?branch=main&label=Validate%20with%20hassfest&logo=github&logoColor=9a9a9a)](https://github.com/Louis-XII/ha-automation-plus/actions/workflows/hassfest.yml)
+<br/>
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?logo=home-assistant&logoColor=9a9a9a)](https://hacs.xyz/docs/faq/custom_repositories/)
+[![Home Assistant minimum](https://img.shields.io/badge/Home%20Assistant-2024.1.0%2B-41BDF5?logo=home-assistant&logoColor=9a9a9a)](https://www.home-assistant.io/)
+<br/>
+[![Issues ouvertes](https://img.shields.io/github/issues/Louis-XII/ha-automation-plus?logo=github&logoColor=9a9a9a)](https://github.com/Louis-XII/ha-automation-plus/issues)
+[![Issues fermées](https://img.shields.io/github/issues-closed/Louis-XII/ha-automation-plus?logo=github&logoColor=9a9a9a)](https://github.com/Louis-XII/ha-automation-plus/issues?q=is%3Aissue+is%3Aclosed)
+<br/>
+[![Installations HA](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fanalytics.home-assistant.io%2Fcustom_integrations.json&label=installs%20HA&query=%24.automation_plus.total&logo=home-assistant&logoColor=9a9a9a)](https://analytics.home-assistant.io/)
+[![GitHub Stars](https://img.shields.io/github/stars/Louis-XII/ha-automation-plus)](https://github.com/Louis-XII/ha-automation-plus/stargazers)
+
 Panel Home Assistant (via HACS) pour visualiser et gérer les automatisations.
 
 ## Présentation
@@ -13,17 +30,26 @@ configuration est cohérente et exporter ses automatisations. Un mode de
 stockage alternatif (un fichier par automatisation, dans un dossier dédié)
 est en cours de développement pour les configurations volumineuses.
 
-## Statut
+## Installation
 
-🚧 v0.6.9 — nettoyage technique mineur : réponses d'erreur plus propres sur
-requête malformée, bouton « Signaler un bug » plus robuste, petites
-corrections internes sans impact fonctionnel majeur.
-Historique détaillé des versions : voir la
-[page Releases](https://github.com/Louis-XII/ha-automation-plus/releases).
+### Rapide (via HACS)
 
-## Installation (test)
+[![Ouvrir dans HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Louis-XII&repository=ha-automation-plus&category=integration)
+[![Ajouter l'intégration](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=automation_plus)
 
-Voir [`info.md`](./info.md).
+**Ouvrir dans HACS** → installer **AutomationPlus** → redémarrer Home
+Assistant → **Ajouter l'intégration**.
+
+### Manuelle
+
+1. HACS → Intégrations → menu ⋮ → **Custom repositories** → coller l'URL
+   de ce dépôt, catégorie **Integration**
+2. Installer **AutomationPlus**
+3. Redémarrer Home Assistant
+4. Paramètres → Appareils et services → **Ajouter une intégration** →
+   rechercher **AutomationPlus**
+
+Le panel apparaît dans la sidebar.
 
 ## Développement
 

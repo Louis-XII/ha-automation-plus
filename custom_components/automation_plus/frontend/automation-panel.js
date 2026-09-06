@@ -23,8 +23,8 @@
 // affiché dans le badge du header ; DEBUG_BUILD_DATE n'est plus dans le
 // header (retiré sur demande) et sera affiché dans le futur bloc « À propos »
 // de la page Réglages (pas encore codée).
-const DEBUG_VERSION = "0.6.9";
-const DEBUG_BUILD_DATE = "2026-09-05";
+const DEBUG_VERSION = "0.6.12";
+const DEBUG_BUILD_DATE = "2026-09-06";
 
 const REPO_URL = "https://github.com/Louis-XII/ha-automation-plus";
 const ISSUES_URL = `${REPO_URL}/issues`;
@@ -83,7 +83,6 @@ const ERROR_TOAST_AUTO_DISMISS_MS = 5000;
 // sans accès internet sur une instance HA locale).
 const ICON_ARROW_LEFT = `<path d="M19 12H5"/><path d="m12 19-7-7 7-7"/>`;
 const ICON_BUG = `<path d="m8 2 1.88 1.88"/><path d="M14.12 3.88 16 2"/><path d="M9 7.13v-1a3.003 3.003 0 1 1 6 0v1"/><path d="M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6"/><path d="M12 20v-9"/><path d="M6.53 9C4.6 8.8 3 7.1 3 5"/><path d="M6 13H2"/><path d="M3 21c0-2.1 1.7-3.9 3.8-4"/><path d="M20.97 5c0 2.1-1.6 3.8-3.5 4"/><path d="M22 13h-4"/><path d="M17.2 17c2.1.1 3.8 1.9 3.8 4"/>`;
-const ICON_HELP_CIRCLE = `<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>`;
 const ICON_SETTINGS = `<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>`;
 const ICON_SEARCH = `<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>`;
 const ICON_LAYERS = `<path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/>`;
@@ -113,7 +112,20 @@ function escapeHtml(value) {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+// Valide `label.color` (issu du label_registry HA) avant interpolation dans
+// un attribut `style` — escapeHtml() bloque la sortie de l'attribut mais pas
+// une valeur CSS malformée (ex. "red;background:...") qui casserait le rendu
+// de la chip (issue #71). Motif restrictif : hex #rgb/#rrggbb ou nom CSS
+// simple (lettres uniquement) — au moindre doute on retombe sur la couleur
+// par défaut plutôt que de risquer d'interpoler quoi que ce soit d'inattendu.
+const SAFE_CSS_COLOR_RE = /^(#[0-9a-fA-F]{3,8}|[a-zA-Z]+)$/;
+
+function safeLabelColor(color) {
+  return typeof color === "string" && SAFE_CSS_COLOR_RE.test(color) ? color : DEFAULT_LABEL_COLOR;
 }
 
 class AutomationPlusPanel extends HTMLElement {
@@ -501,10 +513,10 @@ class AutomationPlusPanel extends HTMLElement {
   // partir de la couleur réelle de l'étiquette HA, qui n'est pas limitée à
   // 3 teintes fixes.
   _renderLabelChip(label, { clickable = false, active = false } = {}) {
-    const color = label.color || DEFAULT_LABEL_COLOR;
+    const color = safeLabelColor(label.color);
     const style = active
-      ? `--chip-color:${escapeHtml(color)};background:var(--chip-color);color:#fff;border:1px solid color-mix(in srgb, var(--chip-color) 65%, black);`
-      : `--chip-color:${escapeHtml(color)};background:color-mix(in srgb, var(--chip-color) 14%, white);color:color-mix(in srgb, var(--chip-color) 60%, black);border:1px solid color-mix(in srgb, var(--chip-color) 45%, white);`;
+      ? `--chip-color:${color};background:var(--chip-color);color:#fff;border:1px solid color-mix(in srgb, var(--chip-color) 65%, black);`
+      : `--chip-color:${color};background:color-mix(in srgb, var(--chip-color) 14%, white);color:color-mix(in srgb, var(--chip-color) 60%, black);border:1px solid color-mix(in srgb, var(--chip-color) 45%, white);`;
     const classes = ["chip", clickable ? "chip-clickable" : "", active ? "active" : ""]
       .filter(Boolean)
       .join(" ");
@@ -709,13 +721,14 @@ class AutomationPlusPanel extends HTMLElement {
     const openUpward = spaceBelow < menuRect.height + 8 && buttonRect.top > menuRect.height + 8;
 
     menuEl.style.left = `${Math.max(8, buttonRect.right - menuRect.width)}px`;
-    if (openUpward) {
-      menuEl.style.top = "auto";
-      menuEl.style.bottom = `${viewportHeight - buttonRect.top + 4}px`;
-    } else {
-      menuEl.style.bottom = "auto";
-      menuEl.style.top = `${buttonRect.bottom + 4}px`;
-    }
+    menuEl.style.bottom = "auto";
+    // Borné par max-height (voir CSS .options-menu) sur petit viewport, mais
+    // le point d'ancrage lui-même peut encore pousser le menu hors écran
+    // quand ni le haut ni le bas du bouton n'ont assez de place (issue #69)
+    // — clamp final dans les deux sens plutôt que de faire confiance au seul
+    // choix de direction ci-dessus.
+    const top = openUpward ? buttonRect.top - menuRect.height - 4 : buttonRect.bottom + 4;
+    menuEl.style.top = `${Math.min(Math.max(top, 8), viewportHeight - menuRect.height - 8)}px`;
   }
 
   // Popup de confirmation de suppression (menu Options > Supprimer, design
@@ -781,8 +794,8 @@ class AutomationPlusPanel extends HTMLElement {
     const selectedLabels = draft.labelIds.map((id) => this._labelRegistry.get(id)).filter(Boolean);
     const labelChipsHtml = selectedLabels
       .map((label) => {
-        const color = label.color || DEFAULT_LABEL_COLOR;
-        const style = `--chip-color:${escapeHtml(color)};background:color-mix(in srgb, var(--chip-color) 14%, white);color:color-mix(in srgb, var(--chip-color) 60%, black);border:1px solid color-mix(in srgb, var(--chip-color) 45%, white);`;
+        const color = safeLabelColor(label.color);
+        const style = `--chip-color:${color};background:color-mix(in srgb, var(--chip-color) 14%, white);color:color-mix(in srgb, var(--chip-color) 60%, black);border:1px solid color-mix(in srgb, var(--chip-color) 45%, white);`;
         return `
           <span class="detail-label-chip" style="${style}">
             <span>${escapeHtml(label.name)}</span>
@@ -878,6 +891,12 @@ class AutomationPlusPanel extends HTMLElement {
       categoryId: automation.category_id || "",
       labelIds: [...automation.label_ids],
       activated: automation.state === "on",
+      // Snapshot pris à l'ouverture (issue #68) : name/icon ne sont envoyés
+      // au registre que s'ils diffèrent réellement de ces valeurs d'origine
+      // — sinon un simple "Enregistrer" sans y toucher figerait l'alias YAML
+      // affiché comme override de registre.
+      originalName: automation.name,
+      originalIcon: automation.icon || "",
     };
     this._render();
   }
@@ -927,15 +946,39 @@ class AutomationPlusPanel extends HTMLElement {
     this._detailSaving = true;
     this._render();
     try {
-      await this._hass.callWS({
+      const trimmedName = draft.name.trim();
+      const trimmedIcon = draft.icon.trim();
+      const wsPayload = {
         type: "config/entity_registry/update",
         entity_id: entityId,
-        name: draft.name.trim() || null,
-        icon: draft.icon.trim() || null,
         area_id: draft.areaId || null,
         categories: { automation: draft.categoryId || null },
         labels: draft.labelIds,
-      });
+      };
+      // Voir _openDetailPopup() : name/icon omis du payload (plutôt
+      // qu'envoyés à blanc) tant que l'utilisateur ne les a pas réellement
+      // modifiés (issue #68).
+      if (trimmedName !== draft.originalName.trim()) {
+        wsPayload.name = trimmedName || null;
+      }
+      if (trimmedIcon !== draft.originalIcon.trim()) {
+        wsPayload.icon = trimmedIcon || null;
+      }
+      await this._hass.callWS(wsPayload);
+      // Reflète immédiatement pièce/catégorie/étiquettes dans le cache local
+      // (seule source lue par _getAutomations()) — sans ça la colonne et les
+      // chips-filtres restent périmés jusqu'au prochain rechargement complet
+      // de la page, donnant l'impression que l'enregistrement a échoué
+      // (issue #67).
+      const registryEntry = this._entityRegistryByEntityId.get(entityId);
+      if (registryEntry) {
+        this._entityRegistryByEntityId.set(entityId, {
+          ...registryEntry,
+          area_id: draft.areaId || null,
+          categories: { ...registryEntry.categories, automation: draft.categoryId || null },
+          labels: draft.labelIds,
+        });
+      }
       const automation = this._findAutomation(entityId);
       const currentlyOn = automation ? automation.state === "on" : null;
       if (currentlyOn !== null && currentlyOn !== draft.activated) {
@@ -1836,6 +1879,8 @@ class AutomationPlusPanel extends HTMLElement {
              (voir issue scroll/menu kebab). */
           position: fixed;
           min-width: 220px;
+          max-height: calc(100vh - 16px);
+          overflow-y: auto;
           background: var(--card-background-color, #fff);
           border-radius: 8px;
           box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
@@ -2411,9 +2456,6 @@ class AutomationPlusPanel extends HTMLElement {
         <div class="header-actions">
           <button class="icon-button report-bug-btn" title="Signaler un bug">
             ${this._icon(ICON_BUG, 22)}
-          </button>
-          <button class="icon-button" title="Aide">
-            ${this._icon(ICON_HELP_CIRCLE, 22)}
           </button>
           <button class="icon-button settings-btn-header" title="Paramètres">
             ${this._icon(ICON_SETTINGS, 22)}

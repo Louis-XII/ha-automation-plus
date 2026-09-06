@@ -152,22 +152,36 @@ def delete_automation_file(config_dir: Path, folder_relative: str, automation_id
     return True
 
 
+class _HaTagTolerantLoader(yaml.SafeLoader):
+    """SafeLoader tolérant aux tags custom HA (`!secret`, `!include*`, etc.).
+
+    Ne les résout pas (contrairement au loader custom de HA) — on vérifie
+    juste que le fichier se parse, pas le contenu inclus/résolu. Sans ça,
+    `yaml.safe_load` lève un `ConstructorError` sur tout tag inconnu, faux
+    positif systématique sur des fichiers pourtant valides pour HA (issue #65).
+    """
+
+
+_HaTagTolerantLoader.add_multi_constructor("!", lambda loader, suffix, node: None)
+
+
 def check_yaml_syntax(config_dir: Path, relative_path: str) -> dict:
     """Vérifie qu'un fichier YAML sous /config se parse sans erreur (Bloc
     Réglages > Vérification des fichiers YAML).
 
-    `yaml.safe_load` uniquement — pas le loader custom de HA (qui résoudrait
-    les tags `!include*`, hors de propos ici : on vérifie juste la syntaxe
-    du fichier lui-même). Un fichier absent est signalé comme une erreur
-    plutôt que silencieusement ignoré, pour rester cohérent avec le contrôle
-    d'existence déjà fait par check_configuration_target().
+    Loader dérivé de `SafeLoader` tolérant aux tags custom HA (`!secret`,
+    `!include*`...) sans les résoudre — on vérifie juste la syntaxe du
+    fichier lui-même, pas le contenu inclus (voir _HaTagTolerantLoader). Un
+    fichier absent est signalé comme une erreur plutôt que silencieusement
+    ignoré, pour rester cohérent avec le contrôle d'existence déjà fait par
+    check_configuration_target().
     """
     target = resolve_safe_path(config_dir, relative_path)
     if not target.is_file():
         return {"ok": False, "error": "Fichier introuvable."}
     try:
         with target.open("r", encoding="utf-8") as handle:
-            yaml.safe_load(handle)
+            yaml.load(handle, Loader=_HaTagTolerantLoader)
     except yaml.YAMLError as err:
         return {"ok": False, "error": str(err)}
     return {"ok": True, "error": None}

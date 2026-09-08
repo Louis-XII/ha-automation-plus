@@ -91,8 +91,9 @@ const ICON_SETTINGS =`<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l
 const ICON_SEARCH = `<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>`;
 const ICON_LAYERS = `<path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/>`;
 
-// Wordmark AutomationPlus (images/automationplus-wordmark.svg) inliné pour
-// pouvoir recolorer le texte "Automation" en currentColor (adaptatif au
+// Wordmark AutomationPlus (export Affinity Designer, régénéré à la main à
+// chaque évolution du design) inliné pour pouvoir recolorer le texte
+// "Automation" en currentColor (adaptatif au
 // thème HA clair/sombre via --primary-text-color, comme l'était le <h1>
 // texte qu'il remplace) — un <img src="..."> externe ne permettrait pas
 // cette recoloration (currentColor ne traverse pas la frontière d'une

@@ -23,7 +23,7 @@
 // affiché dans le badge du header ; DEBUG_BUILD_DATE n'est plus dans le
 // header (retiré sur demande) et sera affiché dans le futur bloc « À propos »
 // de la page Réglages (pas encore codée).
-const DEBUG_VERSION = "0.6.13-beta.1";
+const DEBUG_VERSION = "0.6.13-beta.2";
 const DEBUG_BUILD_DATE = "2026-09-08";
 
 const REPO_URL = "https://github.com/Louis-XII/ha-automation-plus";
@@ -425,10 +425,19 @@ class AutomationPlusPanel extends HTMLElement {
   // de re-render et on les restaure juste après.
   _renderPreservingFocus() {
     const root = this.shadowRoot;
-    const activeIsSearch =
-      root && root.activeElement && root.activeElement.classList.contains("search-input");
-    const selectionStart = activeIsSearch ? root.activeElement.selectionStart : null;
-    const selectionEnd = activeIsSearch ? root.activeElement.selectionEnd : null;
+    const active = root && root.activeElement;
+    // Généralisé à tout champ actif portant `data-field` (issue #72), pas
+    // seulement `.search-input` : le popup Détail (nom, icône, sélecteurs
+    // pièce/catégorie/étiquette) recrée aussi ses champs à chaque
+    // _render(), avec la même perte de focus/caret pendant la frappe.
+    const activeSelector = active && active.classList.contains("search-input")
+      ? ".search-input"
+      : active && active.dataset && active.dataset.field
+        ? `[data-field="${active.dataset.field}"]`
+        : null;
+    const canSelectRange = !!active && typeof active.selectionStart === "number";
+    const selectionStart = canSelectRange ? active.selectionStart : null;
+    const selectionEnd = canSelectRange ? active.selectionEnd : null;
     // Zone scrollable de la vue active (header/toolbar figés, voir CSS
     // `.scroll-area`/`.settings-view`) — un _render() complet la recrée et
     // remet son scroll à 0 à chaque réassignation de `hass`, aussi gênant
@@ -437,11 +446,13 @@ class AutomationPlusPanel extends HTMLElement {
     const previousScrollEl = root && root.querySelector(scrollSelector);
     const scrollTop = previousScrollEl ? previousScrollEl.scrollTop : 0;
     this._render();
-    if (activeIsSearch) {
-      const input = root.querySelector(".search-input");
+    if (activeSelector) {
+      const input = root.querySelector(activeSelector);
       if (input) {
         input.focus();
-        input.setSelectionRange(selectionStart, selectionEnd);
+        if (canSelectRange && typeof input.setSelectionRange === "function") {
+          input.setSelectionRange(selectionStart, selectionEnd);
+        }
       }
     }
     const newScrollEl = root && root.querySelector(scrollSelector);
@@ -490,7 +501,12 @@ class AutomationPlusPanel extends HTMLElement {
       console.error("AutomationPlus: échec du chargement des registres HA", err);
     } finally {
       this._registriesLoading = false;
-      this._render();
+      // _renderPreservingFocus() plutôt que _render() (issue #59 → #72) :
+      // depuis que _openDetailPopup() relance ce chargement, sa résolution
+      // peut désormais arriver pendant que l'utilisateur tape déjà dans le
+      // popup Détail ouvert entretemps — un _render() nu y recréerait les
+      // champs et ferait perdre focus/caret, exactement le bug de #72.
+      this._renderPreservingFocus();
     }
   }
 
@@ -1017,6 +1033,14 @@ class AutomationPlusPanel extends HTMLElement {
   }
 
   _openDetailPopup(automation) {
+    // Rafraîchit les registres HA à chaque ouverture (issue #59) : une
+    // étiquette/pièce/catégorie créée après le chargement initial du panel
+    // n'apparaîtrait sinon dans les sélecteurs qu'après un rechargement
+    // complet de la page. _loadRegistries() se protège déjà contre les
+    // appels concurrents (_registriesLoading) et se re-render seule à la
+    // fin — volontairement pas relancée depuis set hass() (zone fragile,
+    // voir régression scroll v0.6.8).
+    this._loadRegistries();
     this._detailPopupFor = automation.entity_id;
     this._detailDraft = {
       name: automation.name,

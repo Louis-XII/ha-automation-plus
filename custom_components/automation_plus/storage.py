@@ -112,13 +112,21 @@ def generate_automation_id() -> str:
 
 
 def write_automation_file(config_dir: Path, folder_relative: str, automation_id: str, config: dict) -> str:
-    """Écrit <folder>/<automation_id>.yaml — une liste à un élément (include_dir_merge_list)."""
+    """Écrit <folder>/<automation_id>.yaml — une liste à un élément (include_dir_merge_list).
+
+    Lève UnsafePathError si le fichier existe déjà (issue #70) : cette
+    fonction ne sert qu'à la création, jamais à la mise à jour d'une
+    automatisation existante — un `automation_id` déjà présent est toujours
+    une erreur d'appelant, jamais un écrasement volontaire.
+    """
     if not _SAFE_NAME_RE.match(automation_id):
         raise UnsafePathError(f"Identifiant d'automatisation invalide : {automation_id!r}")
     folder = resolve_safe_path(config_dir, folder_relative)
     if not folder.is_dir():
         raise UnsafePathError(f"Dossier introuvable : {folder_relative!r}")
     file_path = folder / f"{automation_id}.yaml"
+    if file_path.exists():
+        raise UnsafePathError(f"Un fichier existe déjà pour cet identifiant : {automation_id!r}")
     payload = {**config, "id": automation_id}
     with file_path.open("w", encoding="utf-8") as handle:
         yaml.safe_dump([payload], handle, allow_unicode=True, sort_keys=False)

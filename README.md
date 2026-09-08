@@ -1,4 +1,4 @@
-![AutomationPlus](./images/logo.png)
+![AutomationPlus](./custom_components/automation_plus/brand/logo.png)
 
 [![Version](https://img.shields.io/github/v/release/Louis-XII/ha-automation-plus?label=version&color=4f8eff&logo=github&logoColor=9a9a9a)](https://github.com/Louis-XII/ha-automation-plus/releases/latest)
 [![Date de release](https://img.shields.io/github/release-date/Louis-XII/ha-automation-plus?logo=github&logoColor=9a9a9a)](https://github.com/Louis-XII/ha-automation-plus/releases/latest)

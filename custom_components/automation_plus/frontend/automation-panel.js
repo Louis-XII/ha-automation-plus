@@ -23,7 +23,7 @@
 // affiché dans le badge du header ; DEBUG_BUILD_DATE n'est plus dans le
 // header (retiré sur demande) et sera affiché dans le futur bloc « À propos »
 // de la page Réglages (pas encore codée).
-const DEBUG_VERSION = "0.6.13-beta.2";
+const DEBUG_VERSION = "0.6.13-beta.3";
 const DEBUG_BUILD_DATE = "2026-09-08";
 
 const REPO_URL = "https://github.com/Louis-XII/ha-automation-plus";
@@ -1899,7 +1899,10 @@ class AutomationPlusPanel extends HTMLElement {
           overflow-y: auto;
         }
         .list-container {
-          padding: 16px;
+          /* padding-bottom élargi pour ne pas laisser le FAB "+" (56px,
+          ancré à 32px du bas, voir .fab) recouvrir l'état/menu Options de
+          la dernière ligne du Dashboard une fois scrollé en bas */
+          padding: 16px 16px 96px;
         }
         .empty-state {
           margin: 0;

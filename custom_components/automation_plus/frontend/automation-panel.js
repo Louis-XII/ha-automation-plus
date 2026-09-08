@@ -23,8 +23,8 @@
 // affiché dans le badge du header ; DEBUG_BUILD_DATE n'est plus dans le
 // header (retiré sur demande) et sera affiché dans le futur bloc « À propos »
 // de la page Réglages (pas encore codée).
-const DEBUG_VERSION = "0.6.12";
-const DEBUG_BUILD_DATE = "2026-09-06";
+const DEBUG_VERSION = "0.6.13-beta.1";
+const DEBUG_BUILD_DATE = "2026-09-08";
 
 const REPO_URL = "https://github.com/Louis-XII/ha-automation-plus";
 const ISSUES_URL = `${REPO_URL}/issues`;
@@ -1055,8 +1055,10 @@ class AutomationPlusPanel extends HTMLElement {
       if (this._storageMode === "folder") {
         await this._hass.callApi("DELETE", `${API_PATHS.automations}/${automation.id}`);
       } else {
+        // DELETE /api/config/automation/config/<id> déclenche déjà un
+        // rechargement complet côté HA (issue #74) — un callService reload
+        // explicite ici double le coût sans bénéfice constaté.
         await this._hass.callApi("DELETE", `config/automation/config/${automation.id}`);
-        await this._hass.callService("automation", "reload", {});
       }
       this._deleteConfirmFor = null;
     } catch (err) {

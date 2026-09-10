@@ -1,5 +1,5 @@
 // AutomationPlus — intégration Home Assistant custom
-// Copyright (C) 2026  Louis-XII
+// Copyright (C) 2026  la12lab
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -26,7 +26,7 @@
 const DEBUG_VERSION = "0.6.13";
 const DEBUG_BUILD_DATE = "2026-09-08";
 
-const REPO_URL = "https://github.com/Louis-XII/ha-automation-plus";
+const REPO_URL = "https://github.com/la12lab/ha-automation-plus";
 const ISSUES_URL = `${REPO_URL}/issues`;
 const RELEASES_URL = `${REPO_URL}/releases`;
 

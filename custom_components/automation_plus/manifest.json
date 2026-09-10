@@ -1,12 +1,12 @@
 {
   "domain": "automation_plus",
   "name": "AutomationPlus",
-  "codeowners": ["@Louis-XII"],
+  "codeowners": ["@la12lab"],
   "config_flow": true,
   "dependencies": ["http", "frontend", "panel_custom"],
-  "documentation": "https://github.com/Louis-XII/ha-automation-plus",
+  "documentation": "https://github.com/la12lab/ha-automation-plus",
   "iot_class": "local_push",
-  "issue_tracker": "https://github.com/Louis-XII/ha-automation-plus/issues",
+  "issue_tracker": "https://github.com/la12lab/ha-automation-plus/issues",
   "requirements": [],
   "version": "0.6.13"
 }

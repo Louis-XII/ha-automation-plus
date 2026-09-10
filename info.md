@@ -5,7 +5,7 @@ directement depuis la sidebar, sans dépendre de la taille de `automations.yaml`
 
 ## Installation
 
-[![Ouvrir dans HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Louis-XII&repository=ha-automation-plus&category=integration)
+[![Ouvrir dans HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=la12lab&repository=ha-automation-plus&category=integration)
 [![Ajouter l'intégration](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=automation_plus)
 
 1. Cliquer sur **Ouvrir dans HACS** ci-dessus (ou HACS → Intégrations → menu

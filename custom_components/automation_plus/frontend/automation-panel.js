@@ -23,8 +23,8 @@
 // affiché dans le badge du header ; DEBUG_BUILD_DATE n'est plus dans le
 // header (retiré sur demande) et sera affiché dans le futur bloc « À propos »
 // de la page Réglages (pas encore codée).
-const DEBUG_VERSION = "0.6.13";
-const DEBUG_BUILD_DATE = "2026-09-08";
+const DEBUG_VERSION = "0.7.0-beta.1";
+const DEBUG_BUILD_DATE = "2026-09-11";
 
 const REPO_URL = "https://github.com/la12lab/ha-automation-plus";
 const ISSUES_URL = `${REPO_URL}/issues`;
@@ -195,6 +195,14 @@ const ICON_TOGGLE_RIGHT = `<rect width="20" height="12" x="2" y="6" rx="6" ry="6
 const ICON_TRASH = `<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>`;
 const ICON_MORE_VERTICAL = `<circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/>`;
 const ICON_ARROW_UP_DOWN = `<path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/>`;
+// Page Édition, mode Code (issue #87) — sélecteur de vue (Liste/Graphe/Code)
+// et bandeau lecture seule.
+const ICON_LIST = `<path d="M3 12h.01"/><path d="M3 18h.01"/><path d="M3 6h.01"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M8 6h13"/>`;
+const ICON_GIT_FORK = `<circle cx="12" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><path d="M18 9v1a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V9"/><path d="M12 12v3"/>`;
+const ICON_FILE_CODE = `<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="m10 13-2 2 2 2"/><path d="m14 13 2 2-2 2"/>`;
+const ICON_LOCK = `<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>`;
+const ICON_UNDO_2 = `<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11"/>`;
+const ICON_REDO_2 = `<path d="m15 14 5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5v0A5.5 5.5 0 0 0 9.5 20H13"/>`;
 
 function escapeHtml(value) {
   return String(value)
@@ -320,6 +328,15 @@ class AutomationPlusPanel extends HTMLElement {
     // dernier rendu réel — permet à set hass() de sauter le re-render
     // complet quand rien de visible n'a changé, voir _automationSnapshot().
     this._lastAutomationSnapshot = null;
+
+    // Page Édition, mode Code (lecture seule — issue #87) : automatisation
+    // ciblée (objet enrichi, voir _getAutomations()) et état du YAML
+    // chargé/sérialisé côté client. Rechargé à chaque ouverture, jamais mis
+    // en cache d'une automatisation à l'autre. Liste/Graphe/Déverrouiller
+    // hors périmètre de ce lot (issues #88/#89/#90).
+    this._editionAutomation = null;
+    this._editionYaml = { loading: false, lines: null, error: null };
+    this._editionHelpOpen = false;
   }
 
   // Instantané minimal des entités automation.* pertinentes pour le rendu
@@ -772,7 +789,7 @@ class AutomationPlusPanel extends HTMLElement {
       ? `<span class="meta-badge">${this._icon(ICON_MAP_PIN, 13)}<span>${escapeHtml(automation.area)}</span></span>`
       : `<span class="meta-empty">—</span>`;
     return `
-      <div class="automation-row${stateOn ? "" : " automation-row-off"}">
+      <div class="automation-row${stateOn ? "" : " automation-row-off"}" data-entity-id="${escapeHtml(automation.entity_id)}">
         <div class="col-name" title="${escapeHtml(automation.name)}">
           <ha-icon class="row-icon" icon="${escapeHtml(automation.icon || "mdi:robot")}"></ha-icon>
           <div class="row-name-block">
@@ -806,13 +823,7 @@ class AutomationPlusPanel extends HTMLElement {
     const items = [
       { action: "more-info", icon: ICON_INFO, label: "Plus d'informations" },
       { action: "detail", icon: ICON_FILE_TEXT, label: "Détail" },
-      {
-        action: "edition",
-        icon: ICON_EDIT,
-        label: "Édition",
-        disabled: true,
-        title: "Page Édition pas encore disponible",
-      },
+      { action: "edition", icon: ICON_EDIT, label: "Édition" },
       { separator: true },
       {
         action: "download",
@@ -826,7 +837,7 @@ class AutomationPlusPanel extends HTMLElement {
         icon: ICON_COPY,
         label: "Dupliquer",
         disabled: true,
-        title: "Page Édition pas encore disponible",
+        title: "Pas encore disponible",
       },
       {
         action: "toggle-state",
@@ -857,6 +868,77 @@ class AutomationPlusPanel extends HTMLElement {
 
   _findAutomation(entityId) {
     return this._getAutomations().find((a) => a.entity_id === entityId) || null;
+  }
+
+  // Sérialise un objet JS (config d'automatisation renvoyée par
+  // GET config/automation/config/<id>) en lignes de texte YAML, pour
+  // affichage dans la page Édition (mode Code, lecture seule — #87).
+  // Volontairement générique, sans connaître les noms de champs HA
+  // (trigger/triggers, condition/conditions... le nommage a changé selon
+  // les versions HA, voir ARCHITECTURE.md §8) : sérialise fidèlement
+  // n'importe quelle clé présente. Pas destiné à un round-trip d'édition
+  // (hors périmètre de ce lot), uniquement à l'affichage.
+  _stringifyYamlScalar(value) {
+    if (value === null || value === undefined) return "null";
+    if (typeof value === "boolean" || typeof value === "number") return String(value);
+    if (typeof value !== "string") return JSON.stringify(value);
+    if (value === "") return '""';
+    const needsQuoting =
+      /^[\s"'>|*&!%#@`[\]{},:-]/.test(value) ||
+      /:\s|\s$/.test(value) ||
+      /^(true|false|null|yes|no|on|off|~)$/i.test(value) ||
+      /^-?\d+(\.\d+)?$/.test(value);
+    return needsQuoting ? JSON.stringify(value) : value;
+  }
+
+  _stringifyYaml(value, indent = 0) {
+    const lines = [];
+    const pad = (level) => "  ".repeat(level);
+    const walkMapping = (obj, level) => {
+      for (const key of Object.keys(obj)) {
+        const v = obj[key];
+        if (v !== null && typeof v === "object") {
+          const empty = Array.isArray(v) ? v.length === 0 : Object.keys(v).length === 0;
+          if (empty) {
+            lines.push(`${pad(level)}${key}: ${Array.isArray(v) ? "[]" : "{}"}`);
+          } else {
+            lines.push(`${pad(level)}${key}:`);
+            walkAny(v, level + 1);
+          }
+        } else {
+          lines.push(`${pad(level)}${key}: ${this._stringifyYamlScalar(v)}`);
+        }
+      }
+    };
+    const walkSequence = (arr, level) => {
+      for (const item of arr) {
+        if (item !== null && typeof item === "object" && !Array.isArray(item)) {
+          const keys = Object.keys(item);
+          if (keys.length === 0) {
+            lines.push(`${pad(level)}- {}`);
+            continue;
+          }
+          const [firstKey, ...restKeys] = keys;
+          const firstValue = item[firstKey];
+          const firstIsObject = firstValue !== null && typeof firstValue === "object";
+          lines.push(`${pad(level)}- ${firstKey}:${firstIsObject ? "" : ` ${this._stringifyYamlScalar(firstValue)}`}`);
+          if (firstIsObject) walkAny(firstValue, level + 2);
+          if (restKeys.length) walkMapping(Object.fromEntries(restKeys.map((k) => [k, item[k]])), level + 1);
+        } else if (Array.isArray(item)) {
+          lines.push(`${pad(level)}-`);
+          walkSequence(item, level + 1);
+        } else {
+          lines.push(`${pad(level)}- ${this._stringifyYamlScalar(item)}`);
+        }
+      }
+    };
+    const walkAny = (val, level) => {
+      if (Array.isArray(val)) walkSequence(val, level);
+      else if (val !== null && typeof val === "object") walkMapping(val, level);
+      else lines.push(`${pad(level)}${this._stringifyYamlScalar(val)}`);
+    };
+    walkAny(value, indent);
+    return lines;
   }
 
   // Positionne le menu Options (.options-menu, position: fixed) par rapport
@@ -1031,6 +1113,55 @@ class AutomationPlusPanel extends HTMLElement {
     if (this._deleteInProgress) return;
     this._deleteConfirmFor = null;
     this._render();
+  }
+
+  // Ouvre la page Édition (mode Code, lecture seule — #87), depuis le menu
+  // Options ("Édition") ou un clic sur la ligne (hors toggle État/menu
+  // Options, voir le délégué de clic de .list-container).
+  _openEdition(automation) {
+    if (!automation) return;
+    this._optionsMenuOpenFor = null;
+    this._view = "edition";
+    this._editionAutomation = automation;
+    this._editionHelpOpen = false;
+    this._render();
+    this._loadEditionYaml();
+  }
+
+  async _loadEditionYaml() {
+    if (!this._hass || !this._editionAutomation) return;
+    // Mode dossier dédié : l'API native HA est câblée en dur sur
+    // automations.yaml, inutilisable ici (voir ARCHITECTURE.md §8) — route
+    // backend dédiée pas encore construite (#92). Erreur explicite plutôt
+    // qu'un GET voué à échouer silencieusement.
+    if (this._storageMode === "folder") {
+      this._editionYaml = {
+        loading: false,
+        lines: null,
+        error: "Mode dossier dédié : la page Édition n'est pas encore disponible pour ce mode.",
+      };
+      this._render();
+      return;
+    }
+    this._editionYaml = { loading: true, lines: null, error: null };
+    this._render();
+    try {
+      const config = await this._hass.callApi(
+        "GET",
+        `config/automation/config/${this._editionAutomation.id}`
+      );
+      this._editionYaml = { loading: false, lines: this._stringifyYaml(config), error: null };
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("AutomationPlus: échec du chargement du YAML de l'automatisation", err);
+      this._editionYaml = {
+        loading: false,
+        lines: null,
+        error: "Impossible de charger le YAML de cette automatisation.",
+      };
+    } finally {
+      this._render();
+    }
   }
 
   _openDetailPopup(automation) {
@@ -1230,8 +1361,8 @@ class AutomationPlusPanel extends HTMLElement {
   }
 
   // Dispatch des actions du menu Options (kebab) d'une ligne, voir
-  // _renderOptionsMenu(). "edition"/"duplicate" restent désactivés côté
-  // rendu (page Édition pas encore codée) — pas d'action associée ici.
+  // _renderOptionsMenu(). "duplicate" reste désactivé côté rendu (pas
+  // encore codé) — pas d'action associée ici.
   _handleOptionsAction(action, entityId) {
     const automation = this._findAutomation(entityId);
     if (!automation) {
@@ -1243,6 +1374,8 @@ class AutomationPlusPanel extends HTMLElement {
       this._render();
     } else if (action === "detail") {
       this._openDetailPopup(automation);
+    } else if (action === "edition") {
+      this._openEdition(automation);
     } else if (action === "download") {
       this._downloadAutomation(automation);
       this._render();
@@ -1663,6 +1796,117 @@ class AutomationPlusPanel extends HTMLElement {
     `;
   }
 
+  // Toolbar de la page Édition — remplace le Header Global (voir _render()),
+  // propre à ce _view. Sélecteur Liste/Graphe/Code : seul Code est
+  // fonctionnel dans ce lot (#87), Liste/Graphe restent des segments
+  // visuels inertes (pas encore codés, #86 pour la suite). Déverrouiller
+  // affiché mais désactivé : l'édition n'est pas encore possible (#88).
+  _renderEditionToolbar() {
+    const automation = this._editionAutomation;
+    const name = automation ? automation.name : "";
+    return `
+      <div class="header edition-toolbar">
+        <div class="header-left">
+          <button class="icon-button back-btn" title="Retour au Dashboard">
+            ${this._icon(ICON_ARROW_LEFT, 22)}
+          </button>
+          <button class="edition-title" data-action="edit-title" title="Détails de l'automatisation">
+            <span>${escapeHtml(name)}</span>
+            ${this._icon(ICON_EDIT, 14)}
+          </button>
+        </div>
+        <div class="edition-view-selector">
+          <span class="edition-segment disabled" title="Pas encore disponible">
+            ${this._icon(ICON_LIST, 14)}<span>Liste</span>
+          </span>
+          <span class="edition-segment disabled" title="Pas encore disponible">
+            ${this._icon(ICON_GIT_FORK, 14)}<span>Graphe</span>
+          </span>
+          <span class="edition-segment active">
+            ${this._icon(ICON_FILE_CODE, 14)}<span>Code</span>
+          </span>
+        </div>
+        <div class="header-actions">
+          <button class="edition-lock-btn" title="Pas encore disponible" disabled>
+            ${this._icon(ICON_LOCK, 14)}<span>Déverrouiller</span>
+          </button>
+          <span class="edition-actions-separator"></span>
+          <button class="icon-button" title="Pas encore disponible" disabled>
+            ${this._icon(ICON_UNDO_2, 20)}
+          </button>
+          <button class="icon-button" title="Pas encore disponible" disabled>
+            ${this._icon(ICON_REDO_2, 20)}
+          </button>
+          <button class="popup-btn popup-btn-secondary" title="Pas encore disponible" disabled>Annuler</button>
+          <button class="popup-btn popup-btn-primary" title="Pas encore disponible" disabled>
+            ${this._icon(ICON_CHECK, 14)}<span>Enregistrer</span>
+          </button>
+          <span class="edition-actions-separator"></span>
+          <button class="icon-button edition-help-btn" title="Aide">
+            ${this._icon(ICON_HELP_CIRCLE, 22)}
+          </button>
+          <button class="icon-button settings-btn-header" title="Paramètres">
+            ${this._icon(ICON_SETTINGS, 22)}
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  // Contenu de la page Édition, mode Code (lecture seule — #87) : bandeau
+  // + gouttière/lignes dans une seule zone scrollable commune (gouttière et
+  // code doivent défiler ensemble, pas indépendamment).
+  _renderEditionView() {
+    const state = this._editionYaml;
+    let bodyHtml;
+    if (state.loading) {
+      bodyHtml = `<p class="edition-status-text">Chargement du YAML…</p>`;
+    } else if (state.error) {
+      bodyHtml = `<p class="edition-status-text edition-status-error">${escapeHtml(state.error)}</p>`;
+    } else if (state.lines) {
+      const gutterHtml = state.lines
+        .map((_, index) => `<span class="edition-line-number">${index + 1}</span>`)
+        .join("");
+      const codeHtml = state.lines
+        .map((line) => `<span class="edition-line-text">${line ? escapeHtml(line) : " "}</span>`)
+        .join("");
+      bodyHtml = `
+        <div class="edition-editor-card">
+          <div class="edition-gutter">${gutterHtml}</div>
+          <div class="edition-code">${codeHtml}</div>
+        </div>
+      `;
+    } else {
+      bodyHtml = "";
+    }
+    return `
+      <div class="edition-readonly-banner">
+        ${this._icon(ICON_LOCK, 14)}
+        <span>Lecture seule — l'édition sera bientôt disponible.</span>
+      </div>
+      <div class="scroll-area edition-scroll-area">${bodyHtml}</div>
+    `;
+  }
+
+  // Popup Aide de la page Édition — contenu à venir, même pattern que les
+  // blocs "Bientôt disponible" du reste du panel (voir issue #83 pour la
+  // rédaction du vrai contenu, pas propre à ce popup).
+  _renderEditionHelpPopup() {
+    return `
+      <div class="popup-overlay" data-popup="edition-help">
+        <div class="popup-card popup-edition-help">
+          <div class="popup-header">
+            <div class="popup-header-title"><span>Aide</span></div>
+            <button class="popup-close" data-action="close-edition-help" title="Fermer">${this._icon(ICON_X, 14)}</button>
+          </div>
+          <div class="popup-body">
+            <p class="popup-text-secondary">Contenu à venir.</p>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   _render() {
     if (!this.shadowRoot) return;
     this.shadowRoot.innerHTML = `
@@ -1729,6 +1973,153 @@ class AutomationPlusPanel extends HTMLElement {
           display: flex;
           align-items: center;
           gap: 4px;
+        }
+        .edition-toolbar {
+          gap: 12px;
+        }
+        .edition-actions-separator {
+          width: 1px;
+          height: 22px;
+          margin: 0 6px;
+          background: var(--divider-color, #e0e0e0);
+          flex-shrink: 0;
+        }
+        .edition-lock-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          height: 34px;
+          padding: 0 16px;
+          border-radius: 8px;
+          border: 1px solid var(--primary-color, #03a9f4);
+          background: var(--card-background-color, #fff);
+          color: var(--primary-color, #03a9f4);
+          font-family: inherit;
+          font-size: 13px;
+          cursor: pointer;
+          flex-shrink: 0;
+        }
+        .edition-lock-btn:disabled {
+          opacity: 0.6;
+          pointer-events: none;
+        }
+        .edition-title {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          height: 36px;
+          max-width: 360px;
+          padding: 0 12px;
+          border: 1px solid var(--divider-color, #e0e0e0);
+          border-radius: 8px;
+          background: var(--card-background-color, #fff);
+          color: var(--primary-text-color, #212121);
+          font-family: inherit;
+          font-size: 15px;
+          font-weight: 700;
+          cursor: pointer;
+        }
+        .edition-title span {
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .edition-title svg {
+          flex-shrink: 0;
+          color: var(--secondary-text-color, #666);
+        }
+        .edition-view-selector {
+          display: flex;
+          align-items: center;
+          gap: 2px;
+          padding: 3px;
+          background: var(--secondary-background-color, #f1f3f4);
+          border-radius: 9px;
+          flex-shrink: 0;
+        }
+        .edition-segment {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 6px 12px;
+          border-radius: 6px;
+          font-size: 13px;
+          color: var(--secondary-text-color, #666);
+        }
+        .edition-segment.active {
+          background: var(--card-background-color, #fff);
+          color: var(--primary-text-color, #212121);
+          font-weight: 700;
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.13);
+        }
+        .edition-segment.disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+        .edition-readonly-banner {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex-shrink: 0;
+          padding: 10px 20px;
+          background: var(--secondary-background-color, #f1f3f4);
+          border-bottom: 1px solid var(--divider-color, #e0e0e0);
+          color: var(--secondary-text-color, #666);
+          font-size: 13px;
+        }
+        .edition-scroll-area {
+          padding: 20px;
+        }
+        .edition-status-text {
+          margin: 0;
+          padding: 24px;
+          text-align: center;
+          color: var(--secondary-text-color, #666);
+          font-size: 13px;
+        }
+        .edition-status-error {
+          color: var(--error-color, #c62828);
+        }
+        .edition-editor-card {
+          display: flex;
+          min-height: 100%;
+          background: var(--card-background-color, #fff);
+          border: 1px solid var(--divider-color, #e0e0e0);
+          border-radius: 8px;
+          overflow: hidden;
+        }
+        .edition-gutter {
+          display: flex;
+          flex-direction: column;
+          flex-shrink: 0;
+          padding: 16px 10px;
+          background: var(--secondary-background-color, #f1f3f4);
+          border-right: 1px solid var(--divider-color, #e0e0e0);
+          text-align: right;
+        }
+        .edition-line-number {
+          font-family: monospace;
+          font-size: 13px;
+          line-height: 1.6;
+          color: var(--secondary-text-color, #666);
+        }
+        .edition-code {
+          display: flex;
+          flex-direction: column;
+          flex: 1;
+          min-width: 0;
+          padding: 16px;
+          overflow-x: auto;
+        }
+        .edition-line-text {
+          font-family: monospace;
+          font-size: 13px;
+          line-height: 1.6;
+          color: var(--primary-text-color, #212121);
+          white-space: pre;
+        }
+        .popup-card.popup-edition-help {
+          max-width: 440px;
         }
         .toolbar {
           display: flex;
@@ -1937,6 +2328,7 @@ class AutomationPlusPanel extends HTMLElement {
           align-items: center;
           padding: 16px;
           border-bottom: 1px solid var(--divider-color, #e0e0e0);
+          cursor: pointer;
         }
         .automation-row:last-child {
           border-bottom: none;
@@ -1945,6 +2337,7 @@ class AutomationPlusPanel extends HTMLElement {
           background: var(--secondary-background-color, #f1f3f4);
         }
         .automation-row-header {
+          cursor: default;
           font-size: 11px;
           font-weight: 700;
           letter-spacing: 0.04em;
@@ -2639,6 +3032,10 @@ class AutomationPlusPanel extends HTMLElement {
           margin-top: 3px;
         }
       </style>
+      ${
+        this._view === "edition"
+          ? this._renderEditionToolbar()
+          : `
       <div class="header">
         <div class="header-left">
           <button class="icon-button back-btn" title="${this._view === "settings" ? "Retour au Dashboard" : "Retour à Home Assistant"}">
@@ -2659,8 +3056,11 @@ class AutomationPlusPanel extends HTMLElement {
           </button>
         </div>
       </div>
-      ${this._view === "settings" ? this._renderSettingsView() : this._renderDashboardView()}
+      `
+      }
+      ${this._view === "settings" ? this._renderSettingsView() : this._view === "edition" ? this._renderEditionView() : this._renderDashboardView()}
       <div class="toast-container">${this._renderToast()}</div>
+      ${this._editionHelpOpen ? this._renderEditionHelpPopup() : ""}
       ${this._deleteConfirmFor ? this._renderDeleteConfirmPopup() : ""}
       ${this._detailPopupFor ? this._renderAutomationDetailPopup() : ""}
     `;
@@ -2832,6 +3232,19 @@ class AutomationPlusPanel extends HTMLElement {
           const entityId = menuItem.dataset.entityId;
           this._optionsMenuOpenFor = null;
           this._handleOptionsAction(action, entityId);
+          return;
+        }
+        // Le menu Options ouvert (.options-menu, position: fixed) reste un
+        // descendant DOM de .automation-row — exclure toute la zone (pas
+        // seulement .options-menu-item) pour ne pas déclencher l'édition en
+        // cliquant sur son fond/espacement.
+        if (event.target.closest(".options-menu")) return;
+
+        // Clic sur la ligne elle-même (hors toggle État/menu Options déjà
+        // gérés ci-dessus) : ouvre la page Édition de cette automatisation.
+        const row = event.target.closest(".automation-row:not(.automation-row-header)");
+        if (row) {
+          this._openEdition(this._findAutomation(row.dataset.entityId));
         }
       });
     }
@@ -2913,11 +3326,36 @@ class AutomationPlusPanel extends HTMLElement {
     const backBtn = root.querySelector(".back-btn");
     if (backBtn) {
       backBtn.addEventListener("click", () => {
-        if (this._view === "settings") {
+        if (this._view === "settings" || this._view === "edition") {
           this._view = "dashboard";
           this._render();
         } else {
           history.back();
+        }
+      });
+    }
+
+    const editionTitleBtn = root.querySelector(".edition-title");
+    if (editionTitleBtn) {
+      editionTitleBtn.addEventListener("click", () => {
+        if (this._editionAutomation) this._openDetailPopup(this._editionAutomation);
+      });
+    }
+
+    const editionHelpBtn = root.querySelector(".edition-help-btn");
+    if (editionHelpBtn) {
+      editionHelpBtn.addEventListener("click", () => {
+        this._editionHelpOpen = true;
+        this._render();
+      });
+    }
+
+    const editionHelpPopup = root.querySelector('.popup-overlay[data-popup="edition-help"]');
+    if (editionHelpPopup) {
+      editionHelpPopup.addEventListener("click", (event) => {
+        if (event.target === editionHelpPopup || event.target.closest('[data-action="close-edition-help"]')) {
+          this._editionHelpOpen = false;
+          this._render();
         }
       });
     }

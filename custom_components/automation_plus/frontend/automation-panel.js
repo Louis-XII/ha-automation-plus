@@ -23,7 +23,7 @@
 // affiché dans le badge du header ; DEBUG_BUILD_DATE n'est plus dans le
 // header (retiré sur demande) et sera affiché dans le futur bloc « À propos »
 // de la page Réglages (pas encore codée).
-const DEBUG_VERSION = "0.7.0-beta.1";
+const DEBUG_VERSION = "0.7.0-beta.2";
 const DEBUG_BUILD_DATE = "2026-09-11";
 
 const REPO_URL = "https://github.com/la12lab/ha-automation-plus";
@@ -203,6 +203,7 @@ const ICON_FILE_CODE = `<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0
 const ICON_LOCK = `<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>`;
 const ICON_UNDO_2 = `<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11"/>`;
 const ICON_REDO_2 = `<path d="m15 14 5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5v0A5.5 5.5 0 0 0 9.5 20H13"/>`;
+const ICON_REFRESH_CW = `<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>`;
 
 function escapeHtml(value) {
   return String(value)
@@ -310,6 +311,9 @@ class AutomationPlusPanel extends HTMLElement {
     this._detailPopupFor = null;
     this._detailDraft = null;
     this._detailSaving = false;
+    // Section "Avancé" (renommage entity_id, issue #81) : repliée par
+    // défaut à chaque ouverture du popup, voir _openDetailPopup().
+    this._detailAdvancedOpen = false;
     // Mode de stockage actif (issue backend, voir AutomationPlusSettingsView)
     // — conditionne l'item "Télécharger" du menu kebab (dossier dédié
     // uniquement). Chargé une fois au premier hass, voir _loadStorageMode().
@@ -1092,6 +1096,31 @@ class AutomationPlusPanel extends HTMLElement {
                 <span class="state-toggle-knob"></span>
               </span>
             </div>
+            <div class="detail-separator"></div>
+            <div class="detail-advanced-header ${this._detailAdvancedOpen ? "open" : ""}" data-action="toggle-advanced">
+              ${this._icon(ICON_CHEVRON_DOWN, 14)}
+              <span>Avancé</span>
+            </div>
+            ${
+              this._detailAdvancedOpen
+                ? `
+            <div class="detail-advanced-content">
+              <span class="detail-label">Entity ID</span>
+              <div class="detail-entity-input">
+                <input type="text" data-field="entityId" value="${escapeHtml(draft.entityId)}" style="border:none;background:transparent;flex:1;font:inherit;color:inherit;outline:none;padding:0;" />
+                ${this._icon(ICON_EDIT, 14)}
+              </div>
+              <button type="button" class="detail-regenerate-btn" data-action="regenerate-entity-id">
+                ${this._icon(ICON_REFRESH_CW, 12)}<span>Régénérer depuis le nom</span>
+              </button>
+              <div class="detail-entity-warning">
+                ${this._icon(ICON_ALERT_TRIANGLE, 12)}
+                <span>Renommer l'entity ID peut casser des automatisations, scripts ou tableaux de bord qui le référencent.</span>
+              </div>
+            </div>
+            `
+                : ""
+            }
           </div>
           <div class="popup-footer">
             <button class="popup-btn popup-btn-secondary" data-action="cancel-detail" ${this._detailSaving ? "disabled" : ""}>Annuler</button>
@@ -1174,6 +1203,7 @@ class AutomationPlusPanel extends HTMLElement {
     // voir régression scroll v0.6.8).
     this._loadRegistries();
     this._detailPopupFor = automation.entity_id;
+    this._detailAdvancedOpen = false;
     this._detailDraft = {
       name: automation.name,
       icon: automation.icon || "",
@@ -1187,6 +1217,10 @@ class AutomationPlusPanel extends HTMLElement {
       // affiché comme override de registre.
       originalName: automation.name,
       originalIcon: automation.icon || "",
+      // Même logique pour l'entity_id (issue #81) : new_entity_id n'est
+      // envoyé au WS que si ce champ diffère réellement de l'original.
+      entityId: automation.entity_id,
+      originalEntityId: automation.entity_id,
     };
     this._render();
   }
@@ -1227,6 +1261,22 @@ class AutomationPlusPanel extends HTMLElement {
     }
   }
 
+  // Slug pour le bouton "Régénérer depuis le nom" (issue #81) : jamais
+  // appliqué automatiquement, seulement un point de départ que l'utilisateur
+  // peut encore éditer avant d'enregistrer.
+  _slugifyName(name) {
+    const diacritics = new RegExp(
+      "[" + String.fromCharCode(0x0300) + "-" + String.fromCharCode(0x036f) + "]",
+      "g"
+    );
+    return (name || "")
+      .normalize("NFD")
+      .replace(diacritics, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "");
+  }
+
   // Enregistrement des métadonnées registre (nom/icône/pièce/catégorie/
   // étiquettes) via l'API WebSocket standard HA — jamais d'écriture directe
   // de fichier. L'activation (marche/arrêt) n'est pas un champ du registre :
@@ -1235,6 +1285,14 @@ class AutomationPlusPanel extends HTMLElement {
     const entityId = this._detailPopupFor;
     const draft = this._detailDraft;
     if (!entityId || !draft || this._detailSaving) return;
+    const trimmedEntityId = draft.entityId.trim();
+    const entityIdChanged = trimmedEntityId !== draft.originalEntityId.trim();
+    if (entityIdChanged && !/^automation\.[a-z0-9_]+$/.test(trimmedEntityId)) {
+      this._showErrorToast(
+        "Entity ID invalide — format attendu : automation.mon_nom (minuscules, chiffres, underscores)."
+      );
+      return;
+    }
     this._detailSaving = true;
     this._render();
     try {
@@ -1249,12 +1307,15 @@ class AutomationPlusPanel extends HTMLElement {
       };
       // Voir _openDetailPopup() : name/icon omis du payload (plutôt
       // qu'envoyés à blanc) tant que l'utilisateur ne les a pas réellement
-      // modifiés (issue #68).
+      // modifiés (issue #68). Même logique pour entity_id (issue #81).
       if (trimmedName !== draft.originalName.trim()) {
         wsPayload.name = trimmedName || null;
       }
       if (trimmedIcon !== draft.originalIcon.trim()) {
         wsPayload.icon = trimmedIcon || null;
+      }
+      if (entityIdChanged) {
+        wsPayload.new_entity_id = trimmedEntityId;
       }
       await this._hass.callWS(wsPayload);
       // Reflète immédiatement pièce/catégorie/étiquettes dans le cache local
@@ -1262,20 +1323,33 @@ class AutomationPlusPanel extends HTMLElement {
       // chips-filtres restent périmés jusqu'au prochain rechargement complet
       // de la page, donnant l'impression que l'enregistrement a échoué
       // (issue #67).
+      const targetEntityId = entityIdChanged ? trimmedEntityId : entityId;
       const registryEntry = this._entityRegistryByEntityId.get(entityId);
       if (registryEntry) {
-        this._entityRegistryByEntityId.set(entityId, {
+        const updatedEntry = {
           ...registryEntry,
+          entity_id: targetEntityId,
           area_id: draft.areaId || null,
           categories: { ...registryEntry.categories, automation: draft.categoryId || null },
           labels: draft.labelIds,
-        });
+        };
+        // L'ancienne clé est volontairement conservée (pas supprimée) : tant
+        // que hass.states n'a pas propagé le nouvel entity_id (délai HA hors
+        // de notre contrôle), une ligne encore indexée sous l'ancien id doit
+        // pouvoir résoudre son registre — nettoyée naturellement par le
+        // prochain _loadRegistries() complet.
+        this._entityRegistryByEntityId.set(entityId, updatedEntry);
+        if (entityIdChanged) this._entityRegistryByEntityId.set(targetEntityId, updatedEntry);
       }
+      // Lu sur l'ancien entity_id (dernière valeur connue avant que HA ne
+      // propage le renommage côté states), mais tout appel de service qui
+      // suit doit cibler le nouveau — HA ne reconnaît plus l'ancien dès que
+      // le WS ci-dessus a réussi.
       const automation = this._findAutomation(entityId);
       const currentlyOn = automation ? automation.state === "on" : null;
       if (currentlyOn !== null && currentlyOn !== draft.activated) {
         await this._hass.callService("automation", draft.activated ? "turn_on" : "turn_off", {
-          entity_id: entityId,
+          entity_id: targetEntityId,
         });
       }
       this._detailPopupFor = null;
@@ -1283,7 +1357,17 @@ class AutomationPlusPanel extends HTMLElement {
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error("AutomationPlus: échec de l'enregistrement des détails", entityId, err);
-      this._showErrorToast("Impossible d'enregistrer les modifications.");
+      // Message dédié si le renommage entity_id était en cause (issue #81) :
+      // HA renvoie une erreur WS peu explicite sur ce champ précis (ID déjà
+      // utilisé, ou cas encore mal géré côté core — voir #133209/#115334),
+      // pas la peine de répercuter le message brut à l'utilisateur.
+      if (entityIdChanged) {
+        this._showErrorToast(
+          "Impossible de renommer l'entity ID — vérifie qu'il n'est pas déjà utilisé, et que les autres champs ont bien été enregistrés."
+        );
+      } else {
+        this._showErrorToast("Impossible d'enregistrer les modifications.");
+      }
     } finally {
       this._detailSaving = false;
       this._render();
@@ -2741,6 +2825,84 @@ class AutomationPlusPanel extends HTMLElement {
           font-size: 11px;
           color: var(--secondary-text-color, #666);
         }
+        .detail-advanced-header {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          cursor: pointer;
+          user-select: none;
+        }
+        .detail-advanced-header span {
+          font-size: 13px;
+          font-weight: 700;
+          color: var(--primary-text-color, #212121);
+        }
+        .detail-advanced-header svg {
+          color: var(--secondary-text-color, #666);
+          flex-shrink: 0;
+          transform: rotate(-90deg);
+          transition: transform 0.15s ease;
+        }
+        .detail-advanced-header.open svg {
+          transform: rotate(0deg);
+        }
+        .detail-advanced-content {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        .detail-entity-input {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          height: 36px;
+          background: var(--secondary-background-color, #fafafa);
+          border-radius: 8px;
+          border: 1px solid var(--divider-color, #e0e0e0);
+          padding: 0 10px;
+          box-sizing: border-box;
+        }
+        .detail-entity-input input {
+          font-family: var(--code-font-family, monospace);
+          font-size: 11px;
+        }
+        .detail-entity-input svg {
+          color: var(--secondary-text-color, #666);
+          flex-shrink: 0;
+        }
+        .detail-regenerate-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          align-self: flex-start;
+          height: 36px;
+          background: var(--card-background-color, #fff);
+          border-radius: 8px;
+          border: 1px solid var(--divider-color, #e0e0e0);
+          padding: 0 12px;
+          font-size: 11px;
+          font-family: inherit;
+          color: var(--secondary-text-color, #666);
+          cursor: pointer;
+        }
+        .detail-regenerate-btn svg {
+          flex-shrink: 0;
+        }
+        .detail-entity-warning {
+          display: flex;
+          align-items: flex-start;
+          gap: 6px;
+        }
+        .detail-entity-warning svg {
+          color: var(--warning-color, #ff9800);
+          flex-shrink: 0;
+          margin-top: 2px;
+        }
+        .detail-entity-warning span {
+          font-size: 11px;
+          line-height: 1.35;
+          color: var(--warning-color, #ff9800);
+        }
         .fab {
           position: fixed;
           right: 32px;
@@ -3287,6 +3449,13 @@ class AutomationPlusPanel extends HTMLElement {
           this._detailDraft.labelIds = this._detailDraft.labelIds.filter(
             (id) => id !== actionEl.dataset.labelId
           );
+          this._render();
+        } else if (action === "toggle-advanced") {
+          this._detailAdvancedOpen = !this._detailAdvancedOpen;
+          this._render();
+        } else if (action === "regenerate-entity-id") {
+          const slug = this._slugifyName(this._detailDraft.name);
+          this._detailDraft.entityId = `automation.${slug}`;
           this._render();
         }
       });

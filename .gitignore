@@ -9,6 +9,7 @@ secrets.yaml
 
 # Suivi de projet interne (privé, non distribué)
 claude-integration/
+CLAUDE.md
 
 # Fichiers de design Pencil
 *.pen

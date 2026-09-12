@@ -23,8 +23,8 @@
 // affiché dans le badge du header ; DEBUG_BUILD_DATE n'est plus dans le
 // header (retiré sur demande) et sera affiché dans le futur bloc « À propos »
 // de la page Réglages (pas encore codée).
-const DEBUG_VERSION = "0.7.0-beta.3";
-const DEBUG_BUILD_DATE = "2026-09-11";
+const DEBUG_VERSION = "0.7.0-beta.4";
+const DEBUG_BUILD_DATE = "2026-09-12";
 
 const REPO_URL = "https://github.com/la12lab/ha-automation-plus";
 const ISSUES_URL = `${REPO_URL}/issues`;
@@ -407,6 +407,13 @@ class AutomationPlusPanel extends HTMLElement {
   set hass(value) {
     const isFirstAssignment = !this._hass;
     this._hass = value;
+
+    // Élévation carte/ligne dérivée du thème (voir --ap-surface dans
+    // _render) : nécessite de savoir si HA est en mode sombre. Appliqué sur
+    // la classList du host indépendamment du re-render conditionnel
+    // ci-dessous (snapshot d'automatisations) pour rester à jour même quand
+    // seul le thème change.
+    this.classList.toggle("ap-dark", !!value?.themes?.darkMode);
 
     // HA réassigne hass à chaque changement d'état de n'importe quelle
     // entité de l'installation, pas seulement les automatisations — un
@@ -1078,7 +1085,7 @@ class AutomationPlusPanel extends HTMLElement {
             <div class="detail-field">
               <span class="detail-label">Entity ID</span>
               <div class="detail-entity-input">
-                <input type="text" data-field="entityId" value="${escapeHtml(draft.entityId)}" style="border:none;background:transparent;flex:1;font:inherit;color:inherit;outline:none;padding:0;" />
+                <input type="text" data-field="entityId" value="${escapeHtml(draft.entityId)}" style="border:none;background:transparent;flex:1;color:inherit;outline:none;padding:0;" />
                 ${this._icon(ICON_EDIT, 14)}
               </div>
               <button type="button" class="detail-regenerate-btn" data-action="regenerate-entity-id">
@@ -1853,6 +1860,7 @@ class AutomationPlusPanel extends HTMLElement {
           ${this._icon(ICON_SEARCH, 16)}
           <input class="search-input" type="text" placeholder="Rechercher une automatisation..." value="${escapeHtml(this._filterText)}" />
         </div>
+        <span class="toolbar-separator"></span>
         <div class="regroup-wrap">
           <button class="regroup-btn">
             ${this._icon(ICON_LAYERS, 16)}
@@ -2004,6 +2012,39 @@ class AutomationPlusPanel extends HTMLElement {
           overflow: hidden;
           background: var(--primary-background-color, #fafafa);
           font-family: var(--paper-font-body1_-_font-family, sans-serif);
+          /* Surface élevée (carte/ligne) dérivée de la couleur de page plutôt
+             que de --card-background-color seul : sur certains thèmes HA
+             custom, --card-background-color est quasi identique à
+             --primary-background-color et ne produit aucun contraste
+             visible. On garde la teinte du thème (color-mix sur la couleur
+             de page) tout en garantissant un écart de clarté, sur le modèle
+             iOS listes groupées — plus clair en mode clair, plus sombre en
+             mode sombre. Voir .ap-dark ci-dessous pour la variante sombre.
+             Écart volontairement marqué (40%/50%, pas 6%/12%, 15%/25% ni
+             28%/38%) : les versions précédentes ont toutes été jugées trop
+             discrètes. */
+          --ap-surface: color-mix(in srgb, var(--primary-background-color, #fafafa) 60%, white 40%);
+          /* Fond des lignes désactivées : gris neutre figé (pas dérivé de
+             --secondary-background-color) — sur un thème custom très
+             coloré, cette variable hérite de la teinte du thème et un état
+             "désactivé" qui garde cette teinte se lit mal comme du gris. */
+          --ap-off-surface: #e4e4e4;
+          /* Fond des boutons (Regrouper/Trier/badges état/Déverrouiller/
+             Réglages/etc.) : figé blanc/gris foncé, jamais dérivé de
+             --card-background-color ni --primary-color du thème actif — sur
+             un thème custom, ces variables peuvent rendre les boutons
+             invisibles ou disgracieux. Couleurs d'accent également figées
+             (pas var(--primary-color)) : #03a9f4 (bleu, état "activé"/action
+             principale, cohérent avec .state-toggle.on) et #8e8e93 (gris,
+             état "désactivé", cohérent avec le fond off de .state-toggle). */
+          --ap-btn-bg: #ffffff;
+          --ap-accent-blue: #03a9f4;
+          --ap-accent-grey: #8e8e93;
+        }
+        :host(.ap-dark) {
+          --ap-surface: color-mix(in srgb, var(--primary-background-color, #111111) 50%, black 50%);
+          --ap-off-surface: #3a3a3a;
+          --ap-btn-bg: #2c2c2e;
         }
         .header {
           display: flex;
@@ -2012,7 +2053,7 @@ class AutomationPlusPanel extends HTMLElement {
           flex-shrink: 0;
           height: 64px;
           padding: 0 16px;
-          background: var(--card-background-color, #fff);
+          background: var(--ap-surface, var(--card-background-color, #fff));
           border-bottom: 1px solid var(--divider-color, #e0e0e0);
         }
         .header-left {
@@ -2077,9 +2118,9 @@ class AutomationPlusPanel extends HTMLElement {
           height: 34px;
           padding: 0 16px;
           border-radius: 8px;
-          border: 1px solid var(--primary-color, #03a9f4);
-          background: var(--card-background-color, #fff);
-          color: var(--primary-color, #03a9f4);
+          border: 1px solid var(--ap-accent-blue, #03a9f4);
+          background: var(--ap-btn-bg, #fff);
+          color: var(--ap-accent-blue, #03a9f4);
           font-family: inherit;
           font-size: 13px;
           cursor: pointer;
@@ -2098,7 +2139,7 @@ class AutomationPlusPanel extends HTMLElement {
           padding: 0 12px;
           border: 1px solid var(--divider-color, #e0e0e0);
           border-radius: 8px;
-          background: var(--card-background-color, #fff);
+          background: var(--ap-btn-bg, #fff);
           color: var(--primary-text-color, #212121);
           font-family: inherit;
           font-size: 15px;
@@ -2133,7 +2174,7 @@ class AutomationPlusPanel extends HTMLElement {
           color: var(--secondary-text-color, #666);
         }
         .edition-segment.active {
-          background: var(--card-background-color, #fff);
+          background: var(--ap-btn-bg, #fff);
           color: var(--primary-text-color, #212121);
           font-weight: 700;
           box-shadow: 0 1px 2px rgba(0, 0, 0, 0.13);
@@ -2169,7 +2210,7 @@ class AutomationPlusPanel extends HTMLElement {
         .edition-editor-card {
           display: flex;
           min-height: 100%;
-          background: var(--card-background-color, #fff);
+          background: var(--ap-surface, var(--card-background-color, #fff));
           border: 1px solid var(--divider-color, #e0e0e0);
           border-radius: 8px;
           overflow: hidden;
@@ -2214,8 +2255,14 @@ class AutomationPlusPanel extends HTMLElement {
           gap: 12px;
           height: 48px;
           padding: 0 16px;
-          background: var(--card-background-color, #fff);
+          background: var(--ap-surface, var(--card-background-color, #fff));
           border-bottom: 1px solid var(--divider-color, #e0e0e0);
+        }
+        .toolbar-separator {
+          width: 1px;
+          height: 20px;
+          background: var(--divider-color, #e0e0e0);
+          flex-shrink: 0;
         }
         .search-wrap {
           display: flex;
@@ -2249,7 +2296,7 @@ class AutomationPlusPanel extends HTMLElement {
           padding: 0 12px;
           border: 1px solid var(--divider-color, #e0e0e0);
           border-radius: 8px;
-          background: var(--card-background-color, #fff);
+          background: var(--ap-btn-bg, #fff);
           color: var(--secondary-text-color, #666);
           font-size: 13px;
           cursor: pointer;
@@ -2264,7 +2311,7 @@ class AutomationPlusPanel extends HTMLElement {
           top: calc(100% + 4px);
           left: 0;
           width: 200px;
-          background: var(--card-background-color, #fff);
+          background: var(--ap-surface, var(--card-background-color, #fff));
           border: 1px solid var(--divider-color, #e0e0e0);
           border-radius: 8px;
           box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
@@ -2286,7 +2333,7 @@ class AutomationPlusPanel extends HTMLElement {
         .dropdown-option.selected {
           background: var(--primary-background-color, #fafafa);
           font-weight: 600;
-          color: var(--primary-color, #03a9f4);
+          color: var(--ap-accent-blue, #03a9f4);
         }
         .chips-row {
           display: flex;
@@ -2312,26 +2359,43 @@ class AutomationPlusPanel extends HTMLElement {
         }
         .status-chip {
           box-sizing: border-box;
-          border: 1px solid transparent;
-          border-radius: 14px;
-          padding: 6px 12px;
+          display: flex;
+          align-items: center;
+          height: 32px;
+          border: 1px solid var(--ap-accent-blue, #03a9f4);
+          border-radius: 8px;
+          padding: 0 12px;
           font-size: 12px;
           font-weight: 400;
           font-family: inherit;
           cursor: pointer;
-          background: var(--secondary-background-color, #f1f3f4);
-          color: var(--secondary-text-color, #666);
+          background: var(--ap-btn-bg, #fff);
+          color: var(--ap-accent-blue, #03a9f4);
         }
+        /* États sélectionnés volontairement distincts et figés (pas dérivés
+           du thème) : "Toutes" neutre sombre, "Activées" reprend la couleur
+           du toggle activé (--ap-accent-blue, cohérence avec .state-toggle.on
+           plutôt qu'une couleur inédite), "Désactivées" reprend le même gris
+           que .state-toggle à l'état off (--ap-accent-grey). */
         .status-chip.active {
-          background: var(--primary-text-color, #212121);
-          color: var(--card-background-color, #fff);
+          background: #212121;
+          border-color: #212121;
+          color: #fff;
           font-weight: 700;
         }
         .status-chip.active[data-value="on"] {
-          background: var(--primary-color, #03a9f4);
+          background: var(--ap-accent-blue, #03a9f4);
+          border-color: var(--ap-accent-blue, #03a9f4);
         }
-        .status-chip[data-value="on"]:not(.active) {
-          border-color: color-mix(in srgb, var(--primary-color, #03a9f4) 45%, white);
+        .status-chip.active[data-value="off"] {
+          background: var(--ap-accent-grey, #8e8e93);
+          border-color: var(--ap-accent-grey, #8e8e93);
+        }
+        /* "Désactivées" au repos : liseré + texte gris (comme le futur fond
+           une fois sélectionné), pas le bleu générique des 2 autres badges. */
+        .status-chip[data-value="off"]:not(.active) {
+          border-color: var(--ap-accent-grey, #8e8e93);
+          color: var(--ap-accent-grey, #8e8e93);
         }
         .chip {
           display: inline-flex;
@@ -2372,8 +2436,8 @@ class AutomationPlusPanel extends HTMLElement {
           background: var(--divider-color, #e0e0e0);
         }
         .chip-reset.active {
-          background: var(--primary-text-color, #212121);
-          color: var(--card-background-color, #fff);
+          background: #212121;
+          color: #fff;
           cursor: default;
         }
         .scroll-area {
@@ -2407,7 +2471,7 @@ class AutomationPlusPanel extends HTMLElement {
           color: var(--secondary-text-color, #666);
         }
         .automation-table {
-          background: var(--card-background-color, #fff);
+          background: var(--ap-surface, var(--card-background-color, #fff));
           border: 1px solid var(--divider-color, #e0e0e0);
           border-radius: 8px;
           overflow: hidden;
@@ -2418,7 +2482,7 @@ class AutomationPlusPanel extends HTMLElement {
           gap: 12px;
           align-items: center;
           padding: 16px;
-          background: var(--card-background-color, #fff);
+          background: var(--ap-surface, var(--card-background-color, #fff));
           border-bottom: 1px solid var(--divider-color, #e0e0e0);
           cursor: pointer;
         }
@@ -2426,7 +2490,7 @@ class AutomationPlusPanel extends HTMLElement {
           border-bottom: none;
         }
         .automation-row-off {
-          background: var(--secondary-background-color, #f1f3f4);
+          background: var(--ap-off-surface, #e4e4e4);
         }
         .automation-row-header {
           cursor: default;
@@ -2514,7 +2578,9 @@ class AutomationPlusPanel extends HTMLElement {
           height: 24px;
           border-radius: 12px;
           padding: 2px;
-          background: var(--divider-color, #e0e0e0);
+          /* Gris figé (pas var(--divider-color), théme-dépendant) — même
+             valeur que .status-chip.active[data-value="off"]. */
+          background: var(--ap-accent-grey, #8e8e93);
           cursor: pointer;
         }
         .state-toggle.pending {
@@ -2522,7 +2588,7 @@ class AutomationPlusPanel extends HTMLElement {
           pointer-events: none;
         }
         .state-toggle.on {
-          background: var(--primary-color, #03a9f4);
+          background: var(--ap-accent-blue, #03a9f4);
           justify-content: flex-end;
         }
         .state-toggle-knob {
@@ -2560,7 +2626,7 @@ class AutomationPlusPanel extends HTMLElement {
           min-width: 220px;
           max-height: calc(100vh - 16px);
           overflow-y: auto;
-          background: var(--card-background-color, #fff);
+          background: var(--ap-surface, var(--card-background-color, #fff));
           border-radius: 8px;
           box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
           padding: 4px 0;
@@ -2614,7 +2680,7 @@ class AutomationPlusPanel extends HTMLElement {
           box-sizing: border-box;
         }
         .popup-card {
-          background: var(--card-background-color, #fff);
+          background: var(--ap-surface, var(--card-background-color, #fff));
           border-radius: 12px;
           box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2), 0 2px 6px rgba(0, 0, 0, 0.13);
           display: flex;
@@ -2626,7 +2692,7 @@ class AutomationPlusPanel extends HTMLElement {
           max-width: 520px;
         }
         .popup-card.popup-detail {
-          max-width: 490px;
+          max-width: 580px;
         }
         .popup-header {
           padding: 16px 20px;
@@ -2657,7 +2723,7 @@ class AutomationPlusPanel extends HTMLElement {
           height: 28px;
           border-radius: 8px;
           border: 1px solid var(--divider-color, #e0e0e0);
-          background: var(--card-background-color, #fff);
+          background: var(--ap-btn-bg, #fff);
           display: flex;
           align-items: center;
           justify-content: center;
@@ -2702,12 +2768,12 @@ class AutomationPlusPanel extends HTMLElement {
           font-family: inherit;
         }
         .popup-btn-secondary {
-          background: var(--card-background-color, #fff);
+          background: var(--ap-btn-bg, #fff);
           border: 1px solid var(--divider-color, #e0e0e0);
           color: var(--secondary-text-color, #666);
         }
         .popup-btn-primary {
-          background: var(--primary-color, #03a9f4);
+          background: var(--ap-accent-blue, #03a9f4);
           border: none;
           color: #fff;
           font-weight: 700;
@@ -2746,7 +2812,7 @@ class AutomationPlusPanel extends HTMLElement {
         .detail-input,
         .detail-select {
           height: 36px;
-          background: var(--secondary-background-color, #fafafa);
+          background: var(--ap-btn-bg, #fff);
           border-radius: 8px;
           border: 1px solid var(--divider-color, #e0e0e0);
           padding: 0 10px;
@@ -2786,7 +2852,7 @@ class AutomationPlusPanel extends HTMLElement {
           flex-wrap: wrap;
           gap: 6px;
           align-items: center;
-          background: var(--secondary-background-color, #fafafa);
+          background: var(--ap-btn-bg, #fff);
           border: 1px solid var(--divider-color, #e0e0e0);
           border-radius: 8px;
           padding: 6px 8px;
@@ -2814,7 +2880,7 @@ class AutomationPlusPanel extends HTMLElement {
           height: 26px;
           border-radius: 6px;
           border: 1px solid var(--divider-color, #e0e0e0);
-          background: var(--card-background-color, #fff);
+          background: var(--ap-btn-bg, #fff);
           font-size: 11px;
           padding: 0 6px;
           color: var(--secondary-text-color, #666);
@@ -2848,7 +2914,7 @@ class AutomationPlusPanel extends HTMLElement {
           align-items: center;
           gap: 8px;
           height: 36px;
-          background: var(--secondary-background-color, #fafafa);
+          background: var(--ap-btn-bg, #fff);
           border-radius: 8px;
           border: 1px solid var(--divider-color, #e0e0e0);
           padding: 0 10px;
@@ -2868,7 +2934,7 @@ class AutomationPlusPanel extends HTMLElement {
           gap: 6px;
           align-self: flex-start;
           height: 36px;
-          background: var(--card-background-color, #fff);
+          background: var(--ap-btn-bg, #fff);
           border-radius: 8px;
           border: 1px solid var(--divider-color, #e0e0e0);
           padding: 0 12px;
@@ -2903,7 +2969,7 @@ class AutomationPlusPanel extends HTMLElement {
           height: 56px;
           border-radius: 50%;
           border: none;
-          background: var(--primary-color, #03a9f4);
+          background: var(--ap-accent-blue, #03a9f4);
           color: #fff;
           display: none;
           align-items: center;
@@ -2978,7 +3044,7 @@ class AutomationPlusPanel extends HTMLElement {
           gap: 16px;
         }
         .settings-block {
-          background: var(--card-background-color, #fff);
+          background: var(--ap-surface, var(--card-background-color, #fff));
           border: 1px solid var(--divider-color, #e0e0e0);
           border-radius: 12px;
           padding: 20px;
@@ -3043,7 +3109,7 @@ class AutomationPlusPanel extends HTMLElement {
           color: var(--secondary-text-color, #666);
         }
         .storage-segment.active {
-          background: var(--card-background-color, #fff);
+          background: var(--ap-btn-bg, #fff);
           color: var(--primary-text-color, #212121);
           font-weight: 700;
           box-shadow: 0 1px 2px rgba(0, 0, 0, 0.13);
@@ -3088,14 +3154,14 @@ class AutomationPlusPanel extends HTMLElement {
           padding: 0 16px;
           border: 1px solid var(--divider-color, #e0e0e0);
           border-radius: 8px;
-          background: var(--card-background-color, #fff);
+          background: var(--ap-btn-bg, #fff);
           color: var(--secondary-text-color, #666);
           font-size: 13px;
           font-family: inherit;
           cursor: pointer;
         }
         .settings-btn:hover:not(.disabled):not(:disabled) {
-          border-color: var(--primary-color, #03a9f4);
+          border-color: var(--ap-accent-blue, #03a9f4);
           color: var(--primary-text-color, #212121);
         }
         .settings-btn.disabled,
@@ -3181,7 +3247,7 @@ class AutomationPlusPanel extends HTMLElement {
           align-items: center;
           gap: 6px;
           font-size: 13px;
-          color: var(--primary-color, #03a9f4);
+          color: var(--ap-accent-blue, #03a9f4);
           text-decoration: none;
         }
         .about-link:hover {

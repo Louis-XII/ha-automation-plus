@@ -22,13 +22,14 @@ Panel Home Assistant (via HACS) pour visualiser et gérer les automatisations.
 ## Présentation
 
 AutomationPlus ajoute un panel dédié dans la sidebar de Home Assistant pour
-consulter et piloter ses automatisations sans dépendre de la taille du
-fichier `automations.yaml` ni de l'éditeur YAML natif. Recherche, filtres
-(étiquette, catégorie, pièce, statut) et activation/désactivation en un
-clic depuis une liste claire, plus une page Réglages pour vérifier que la
-configuration est cohérente et exporter ses automatisations. Un mode de
-stockage alternatif (un fichier par automatisation, dans un dossier dédié)
-est en cours de développement pour les configurations volumineuses.
+consulter et piloter ses automatisations, sans dépendre de l'éditeur YAML
+natif — ni de la taille du fichier `automations.yaml`, ni de la façon dont
+il est utilisé (fichier unique natif ou dossier dédié multi-fichiers).
+
+*🇬🇧 AutomationPlus adds a dedicated panel to the Home Assistant sidebar to
+view and manage your automations, without depending on the native YAML
+editor — nor on the size of the `automations.yaml` file, nor on how it's
+used (native single file or dedicated multi-file folder).*
 
 ## Installation
 
@@ -51,12 +52,34 @@ Assistant → **Ajouter l'intégration**.
 
 Le panel apparaît dans la sidebar.
 
+## Roadmap
+
+Sans date précise — grands axes de développement à venir :
+
+| Item | Progress | Détail |
+|---|---|---|
+| 💻 Édition Code | 🔄 | Mode d'édition du YAML brut |
+| 🧩 Édition Bloc | ⚪ | Mode d'édition par blocs |
+| 🔀 Édition Graph | ⚪ | Mode d'édition sous forme de graphe visuel |
+| 📁 Mode dossier dédié | 🔄 | Stockage alternatif en un fichier *.yaml par automatisation |
+| 🧪 Tests automatisés | ⚪ | Couverture de tests sur l'intégration Python |
+| 🎨 Personnalisation | ⚪ | Options de personnalisations du panel |
+| 🌐 Traductions anglais | ⚪ | Traduction de l'interface en anglais |
+| 📱 Design responsive smartphone | ⚪ | Adaptation de l'interface aux petits écrans (smartphone) |
+
 ## Développement
 
-- `custom_components/automation_plus/` — intégration Python, enregistre le
-  panel et sert le fichier JS statique
+- `custom_components/automation_plus/__init__.py` — point d'entrée,
+  enregistre le panel dans la sidebar
+- `custom_components/automation_plus/http.py` — routes HTTP du mode de
+  stockage "dossier dédié" (l'API HA native ne couvrant que
+  `automations.yaml`)
+- `custom_components/automation_plus/storage.py` — accès disque pour ce
+  même mode
+- `custom_components/automation_plus/config_flow.py` — configuration de
+  l'intégration
 - `custom_components/automation_plus/frontend/automation-panel.js` — web
-  component du panel (vanilla JS pour l'instant, migration Lit envisagée)
+  component du panel (vanilla JS)
 
 ## Licence
 

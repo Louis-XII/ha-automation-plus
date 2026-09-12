@@ -18,12 +18,14 @@
 // HA assigne directement les propriétés hass / narrow / panel sur l'élément,
 // pas via des attributs HTML — d'où l'usage de set hass(value) plutôt que attributeChangedCallback.
 
+import { BLOCK_REGISTRY_HA_VERSION, BLOCK_TYPES, describeTrigger, describeCondition, describeAction } from "./automation-blocks-catalog.js";
+
 // Infos de debug — pas de pipeline de build pour l'instant, donc à tenir à
 // jour manuellement en même temps que manifest.json. DEBUG_VERSION reste
 // affiché dans le badge du header ; DEBUG_BUILD_DATE n'est plus dans le
 // header (retiré sur demande) et sera affiché dans le futur bloc « À propos »
 // de la page Réglages (pas encore codée).
-const DEBUG_VERSION = "0.7.0";
+const DEBUG_VERSION = "0.8.0-beta.1";
 const DEBUG_BUILD_DATE = "2026-09-12";
 
 const REPO_URL = "https://github.com/la12lab/ha-automation-plus";
@@ -199,6 +201,11 @@ const ICON_ARROW_UP_DOWN = `<path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path 
 // et bandeau lecture seule.
 const ICON_LIST = `<path d="M3 12h.01"/><path d="M3 18h.01"/><path d="M3 6h.01"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M8 6h13"/>`;
 const ICON_GIT_FORK = `<circle cx="12" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><path d="M18 9v1a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V9"/><path d="M12 12v3"/>`;
+// En-têtes des 3 groupes de la vue Édition Liste (#5) : Déclencheur/Condition/Action.
+const ICON_ZAP = `<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>`;
+const ICON_GIT_BRANCH = `<line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>`;
+const ICON_PLAY = `<polygon points="6 3 20 12 6 21 6 3"/>`;
+const ICON_GRIP_VERTICAL = `<circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/>`;
 const ICON_FILE_CODE = `<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="m10 13-2 2 2 2"/><path d="m14 13 2 2-2 2"/>`;
 const ICON_LOCK = `<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>`;
 const ICON_UNDO_2 = `<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11"/>`;
@@ -212,6 +219,16 @@ function escapeHtml(value) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+// Le nommage HA du champ liste (singulier vs pluriel) a changé selon les
+// versions (voir _stringifyYaml plus bas et ARCHITECTURE.md §8) — on essaie
+// les deux plutôt que de supposer l'un ou l'autre. Un objet unique (pas de
+// liste) reste possible en YAML HA, normalisé ici en tableau à un élément.
+function pickList(config, singularKey, pluralKey) {
+  const raw = config[pluralKey] ?? config[singularKey];
+  if (!raw) return [];
+  return Array.isArray(raw) ? raw : [raw];
 }
 
 // Valide `label.color` (issu du label_registry HA) avant interpolation dans
@@ -336,8 +353,11 @@ class AutomationPlusPanel extends HTMLElement {
     // en cache d'une automatisation à l'autre. Liste/Graphe/Déverrouiller
     // hors périmètre de ce lot (issues #88/#89/#90).
     this._editionAutomation = null;
-    this._editionYaml = { loading: false, lines: null, error: null };
+    this._editionYaml = { loading: false, lines: null, config: null, error: null };
     this._editionHelpOpen = false;
+    // Vue par défaut de la page Édition : Liste, cf. issue #5. Code reste
+    // disponible comme onglet secondaire, chargé en lazy (voir _loadEditionYaml).
+    this._editionSubView = "liste";
   }
 
   // Instantané minimal des entités automation.* pertinentes pour le rendu
@@ -1152,13 +1172,15 @@ class AutomationPlusPanel extends HTMLElement {
     this._render();
   }
 
-  // Ouvre la page Édition (mode Code, lecture seule — #87), depuis le menu
-  // Options ("Édition") ou un clic sur la ligne (hors toggle État/menu
-  // Options, voir le délégué de clic de .list-container).
+  // Ouvre la page Édition (vues Liste/Code, lecture seule — #5/#87), depuis
+  // le menu Options ("Édition") ou un clic sur la ligne (hors toggle État/
+  // menu Options, voir le délégué de clic de .list-container). Liste est la
+  // vue par défaut (#5) ; Code reste disponible en onglet secondaire.
   _openEdition(automation) {
     if (!automation) return;
     this._optionsMenuOpenFor = null;
     this._view = "edition";
+    this._editionSubView = "liste";
     this._editionAutomation = automation;
     this._editionHelpOpen = false;
     this._render();
@@ -1175,25 +1197,34 @@ class AutomationPlusPanel extends HTMLElement {
       this._editionYaml = {
         loading: false,
         lines: null,
+        config: null,
         error: "Mode dossier dédié : la page Édition n'est pas encore disponible pour ce mode.",
       };
       this._render();
       return;
     }
-    this._editionYaml = { loading: true, lines: null, error: null };
+    this._editionYaml = { loading: true, lines: null, config: null, error: null };
     this._render();
     try {
       const config = await this._hass.callApi(
         "GET",
         `config/automation/config/${this._editionAutomation.id}`
       );
-      this._editionYaml = { loading: false, lines: this._stringifyYaml(config), error: null };
+      // config brut conservé (pas seulement stringifié) : la vue Liste lit
+      // directement trigger(s)/condition(s)/action(s) dessus, cf. _renderEditionListe().
+      this._editionYaml = {
+        loading: false,
+        lines: this._stringifyYaml(config),
+        config,
+        error: null,
+      };
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error("AutomationPlus: échec du chargement du YAML de l'automatisation", err);
       this._editionYaml = {
         loading: false,
         lines: null,
+        config: null,
         error: "Impossible de charger le YAML de cette automatisation.",
       };
     } finally {
@@ -1909,13 +1940,13 @@ class AutomationPlusPanel extends HTMLElement {
           </button>
         </div>
         <div class="edition-view-selector">
-          <span class="edition-segment disabled" title="Pas encore disponible">
+          <span class="edition-segment${this._editionSubView === "liste" ? " active" : ""}" data-sub-view="liste">
             ${this._icon(ICON_LIST, 14)}<span>Liste</span>
           </span>
           <span class="edition-segment disabled" title="Pas encore disponible">
             ${this._icon(ICON_GIT_FORK, 14)}<span>Graphe</span>
           </span>
-          <span class="edition-segment active">
+          <span class="edition-segment${this._editionSubView === "code" ? " active" : ""}" data-sub-view="code">
             ${this._icon(ICON_FILE_CODE, 14)}<span>Code</span>
           </span>
         </div>
@@ -1946,10 +1977,24 @@ class AutomationPlusPanel extends HTMLElement {
     `;
   }
 
-  // Contenu de la page Édition, mode Code (lecture seule — #87) : bandeau
-  // + gouttière/lignes dans une seule zone scrollable commune (gouttière et
-  // code doivent défiler ensemble, pas indépendamment).
+  // Bandeau lecture seule commun aux deux onglets d'Édition (Liste/Code).
+  _renderEditionReadonlyBanner() {
+    return `
+      <div class="edition-readonly-banner">
+        ${this._icon(ICON_LOCK, 14)}
+        <span>Lecture seule — l'édition sera bientôt disponible.</span>
+      </div>
+    `;
+  }
+
   _renderEditionView() {
+    return this._editionSubView === "code" ? this._renderEditionCode() : this._renderEditionListe();
+  }
+
+  // Contenu de l'onglet Code (lecture seule — #87) : bandeau + gouttière/
+  // lignes dans une seule zone scrollable commune (gouttière et code doivent
+  // défiler ensemble, pas indépendamment).
+  _renderEditionCode() {
     const state = this._editionYaml;
     let bodyHtml;
     if (state.loading) {
@@ -1973,11 +2018,146 @@ class AutomationPlusPanel extends HTMLElement {
       bodyHtml = "";
     }
     return `
-      <div class="edition-readonly-banner">
-        ${this._icon(ICON_LOCK, 14)}
-        <span>Lecture seule — l'édition sera bientôt disponible.</span>
-      </div>
+      ${this._renderEditionReadonlyBanner()}
       <div class="scroll-area edition-scroll-area">${bodyHtml}</div>
+    `;
+  }
+
+  // Contenu de l'onglet Liste (lecture seule — #5) : Sidebar Palette et
+  // Panneau Paramètres affichés grisés/inertes (fidélité visuelle au .pen,
+  // aucune logique d'ajout/sélection/édition de bloc réelle dans ce lot) —
+  // seule la Zone Centrale (3 groupes) est réellement pilotée par données.
+  _renderEditionListe() {
+    const state = this._editionYaml;
+    let centralHtml;
+    if (state.loading) {
+      centralHtml = `<p class="edition-status-text">Chargement de l'automatisation…</p>`;
+    } else if (state.error) {
+      centralHtml = `<p class="edition-status-text edition-status-error">${escapeHtml(state.error)}</p>`;
+    } else if (state.config) {
+      centralHtml = this._renderEditionListeGroups(state.config);
+    } else {
+      centralHtml = "";
+    }
+    return `
+      ${this._renderEditionReadonlyBanner()}
+      <div class="edition-liste-body">
+        ${this._renderEditionPalette()}
+        <div class="scroll-area edition-liste-central">${centralHtml}</div>
+        ${this._renderEditionSettingsPanel()}
+      </div>
+    `;
+  }
+
+  // Une "card" par bloc trigger/condition/action, décrite via le catalogue
+  // statique (automation-blocks-catalog.js — #22). Poignée de glisser-déposer
+  // et menu kebab affichés (fidélité visuelle au .pen) mais inertes : pas de
+  // drag ni de sélection réels dans ce lot lecture seule. Pastille d'icône
+  // colorée par catégorie, comme dans le .pen (Carte Déclencheur/Condition/
+  // Action de « Edition automatisation - liste »).
+  _renderEditionBlockCard(category, entry) {
+    return `
+      <div class="edition-block-card">
+        ${this._icon(ICON_GRIP_VERTICAL, 14)}
+        <span class="edition-block-icon edition-block-icon-${category}">${this._icon(entry.icon, 16)}</span>
+        <div class="edition-block-text">
+          <span class="edition-block-title">${escapeHtml(entry.title)}</span>
+          <span class="edition-block-summary">${escapeHtml(entry.summary)}</span>
+        </div>
+        <button class="icon-button edition-block-kebab" title="Pas encore disponible" disabled>
+          ${this._icon(ICON_MORE_VERTICAL, 16)}
+        </button>
+      </div>
+    `;
+  }
+
+  // En-tête de groupe : badge pilule coloré par catégorie + ligne de
+  // séparation pleine largeur, comme le .pen (Entete Déclencheur/Condition/
+  // Action) — pas un simple libellé en gras.
+  _renderEditionGroup(category, icon, title, cardsHtml, addLabel) {
+    return `
+      <div class="edition-group">
+        <div class="edition-group-header">
+          <span class="edition-group-badge edition-group-badge-${category}">
+            ${this._icon(icon, 10)}<span>${title}</span>
+          </span>
+          <span class="edition-group-divider"></span>
+        </div>
+        <div class="edition-group-cards">${cardsHtml || `<p class="edition-group-empty">Aucun bloc</p>`}</div>
+        <button class="edition-group-add" title="Pas encore disponible" disabled>
+          ${this._icon(ICON_PLUS, 14)}<span>${addLabel}</span>
+        </button>
+      </div>
+    `;
+  }
+
+  _renderEditionListeGroups(config) {
+    const hass = this._hass;
+    const triggers = pickList(config, "trigger", "triggers")
+      .map((t) => this._renderEditionBlockCard("trigger", describeTrigger(t, hass)))
+      .join("");
+    const conditions = pickList(config, "condition", "conditions")
+      .map((c) => this._renderEditionBlockCard("condition", describeCondition(c, hass)))
+      .join("");
+    const actions = pickList(config, "action", "actions")
+      .map((a) => this._renderEditionBlockCard("action", describeAction(a, hass)))
+      .join("");
+    return `
+      ${this._renderEditionGroup("trigger", ICON_ZAP, "Déclencheur", triggers, "Ajouter un déclencheur")}
+      ${this._renderEditionGroup("condition", ICON_GIT_BRANCH, "Condition", conditions, "Ajouter une condition")}
+      ${this._renderEditionGroup("action", ICON_PLAY, "Action", actions, "Ajouter une action")}
+    `;
+  }
+
+  // Sidebar gauche "ajouter un bloc" — placeholder statique grisé, sans
+  // logique de recherche/ajout (édition non disponible dans ce lot, #5).
+  // Liste réelle des 11 types pilotée par BLOCK_TYPES (catalogue statique,
+  // #22) plutôt qu'en dur ici, fidèle au contenu à plat du .pen (pas de
+  // catégories repliables).
+  _renderEditionPaletteSection(icon, title, items) {
+    const itemsHtml = items
+      .map(
+        (item) => `
+          <div class="edition-palette-item">
+            ${this._icon(item.icon, 15)}<span>${escapeHtml(item.title)}</span>${this._icon(ICON_PLUS, 13)}
+          </div>
+        `
+      )
+      .join("");
+    return `
+      <div class="edition-palette-section">
+        <div class="edition-palette-section-header">${this._icon(icon, 13)}<span>${title}</span></div>
+        <div class="edition-palette-items">${itemsHtml}</div>
+      </div>
+    `;
+  }
+
+  _renderEditionPalette() {
+    return `
+      <div class="edition-palette">
+        <div class="edition-palette-search">
+          ${this._icon(ICON_SEARCH, 15)}
+          <input type="text" placeholder="Rechercher un bloc..." disabled />
+        </div>
+        ${this._renderEditionPaletteSection(ICON_ZAP, "DÉCLENCHEURS", BLOCK_TYPES.trigger)}
+        ${this._renderEditionPaletteSection(ICON_GIT_BRANCH, "CONDITIONS", BLOCK_TYPES.condition)}
+        ${this._renderEditionPaletteSection(ICON_PLAY, "ACTIONS", BLOCK_TYPES.action)}
+        <span class="edition-palette-footer">Registre blocs · HA ${BLOCK_REGISTRY_HA_VERSION}</span>
+      </div>
+    `;
+  }
+
+  // Panneau droit "paramètres du bloc" — placeholder statique grisé (aucun
+  // bloc n'est réellement sélectionnable dans ce lot lecture seule, #5) :
+  // pas de bouton "Supprimer le bloc" ici, il n'y a jamais de bloc sélectionné.
+  _renderEditionSettingsPanel() {
+    return `
+      <div class="edition-settings-panel">
+        <div class="edition-settings-empty">
+          ${this._icon(ICON_SETTINGS, 28)}
+          <p>Sélectionnez un bloc pour afficher ses paramètres.</p>
+        </div>
+      </div>
     `;
   }
 
@@ -2040,11 +2220,28 @@ class AutomationPlusPanel extends HTMLElement {
           --ap-btn-bg: #ffffff;
           --ap-accent-blue: #03a9f4;
           --ap-accent-grey: #8e8e93;
+          /* Couleurs de catégorie de la vue Édition Liste (#5), reprises du
+             .pen (badges/icônes Déclencheur/Condition/Action) — figées comme
+             les accents ci-dessus, avec une variante sombre dédiée (voir
+             :host(.ap-dark) juste en dessous) pour rester lisibles, contrairement
+             à un premier essai qui les avait oubliées. */
+          --ap-category-trigger-bg: #fff8e1;
+          --ap-category-trigger-fg: #ef6c00;
+          --ap-category-condition-bg: #e3f2fd;
+          --ap-category-condition-fg: #1565c0;
+          --ap-category-action-bg: #e8f5e9;
+          --ap-category-action-fg: #2e7d32;
         }
         :host(.ap-dark) {
           --ap-surface: color-mix(in srgb, var(--primary-background-color, #111111) 50%, black 50%);
           --ap-off-surface: #3a3a3a;
           --ap-btn-bg: #2c2c2e;
+          --ap-category-trigger-bg: #4d3800;
+          --ap-category-trigger-fg: #ffb74d;
+          --ap-category-condition-bg: #0d3868;
+          --ap-category-condition-fg: #64b5f6;
+          --ap-category-action-bg: #1b4d1e;
+          --ap-category-action-fg: #81c784;
         }
         .header {
           display: flex;
@@ -2172,6 +2369,7 @@ class AutomationPlusPanel extends HTMLElement {
           border-radius: 6px;
           font-size: 13px;
           color: var(--secondary-text-color, #666);
+          cursor: pointer;
         }
         .edition-segment.active {
           background: var(--ap-btn-bg, #fff);
@@ -2244,6 +2442,257 @@ class AutomationPlusPanel extends HTMLElement {
           line-height: 1.6;
           color: var(--primary-text-color, #212121);
           white-space: pre;
+        }
+        /* Vue Liste (#5) — Sidebar Palette et Panneau Paramètres affichés
+           mais inertes (opacity + pointer-events: none), fidèles aux
+           dimensions et à la structure du .pen (« Edition automatisation -
+           liste ») : palette 300px, panneau paramètres 340px. Seule la Zone
+           Centrale (3 groupes) est réellement pilotée par les données de
+           l'automatisation. */
+        .edition-liste-body {
+          display: flex;
+          flex: 1;
+          min-height: 0;
+        }
+        .edition-palette,
+        .edition-settings-panel {
+          flex-shrink: 0;
+          opacity: 0.65;
+          pointer-events: none;
+        }
+        .edition-palette {
+          display: flex;
+          flex-direction: column;
+          gap: 20px;
+          width: 300px;
+          padding: 16px;
+          background: var(--ap-surface, var(--card-background-color, #fff));
+          border-right: 1px solid var(--divider-color, #e0e0e0);
+          overflow-y: auto;
+        }
+        .edition-palette-search {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex-shrink: 0;
+          height: 32px;
+          padding: 0 10px;
+          border: 1px solid var(--divider-color, #e0e0e0);
+          border-radius: 8px;
+          background: var(--primary-background-color, #fafafa);
+          color: var(--secondary-text-color, #666);
+        }
+        .edition-palette-search input {
+          flex: 1;
+          border: none;
+          background: transparent;
+          outline: none;
+          font-size: 13px;
+          color: var(--primary-text-color, #212121);
+        }
+        .edition-palette-section {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        .edition-palette-section-header {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          color: var(--secondary-text-color, #666);
+          font-size: 11px;
+          font-weight: 700;
+          letter-spacing: 0.6px;
+        }
+        .edition-palette-items {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+        .edition-palette-item {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          height: 36px;
+          padding: 0 10px;
+          border: 1px solid var(--divider-color, #e0e0e0);
+          border-radius: 8px;
+          background: var(--primary-background-color, #fafafa);
+          color: var(--secondary-text-color, #666);
+          font-size: 13px;
+        }
+        .edition-palette-item span {
+          flex: 1;
+          color: var(--primary-text-color, #212121);
+        }
+        .edition-palette-footer {
+          margin-top: auto;
+          padding-top: 8px;
+          flex-shrink: 0;
+          font-size: 11px;
+          text-align: center;
+          color: var(--secondary-text-color, #666);
+        }
+        .edition-settings-panel {
+          display: flex;
+          flex-direction: column;
+          width: 340px;
+          background: var(--ap-surface, var(--card-background-color, #fff));
+          border-left: 1px solid var(--divider-color, #e0e0e0);
+        }
+        .edition-settings-empty {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 12px;
+          padding: 24px;
+          text-align: center;
+          color: var(--secondary-text-color, #666);
+        }
+        .edition-settings-empty svg {
+          opacity: 0.4;
+        }
+        .edition-settings-empty p {
+          margin: 0;
+          font-size: 13px;
+        }
+        .edition-liste-central {
+          flex: 1;
+          min-width: 0;
+          padding: 24px 32px;
+          display: flex;
+          flex-direction: column;
+          gap: 24px;
+          background: var(--primary-background-color, #fafafa);
+        }
+        .edition-group {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+        .edition-group-header {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+        /* Badge coloré par catégorie, comme le .pen — couleurs figées avec
+           variante sombre dédiée (voir --ap-category-* sur :host), pas de
+           dérivation du thème actif. */
+        .edition-group-badge {
+          display: flex;
+          align-items: center;
+          gap: 5px;
+          flex-shrink: 0;
+          padding: 4px 9px;
+          border-radius: 12px;
+          font-size: 11px;
+          font-weight: 700;
+        }
+        .edition-group-badge-trigger {
+          background: var(--ap-category-trigger-bg);
+          color: var(--ap-category-trigger-fg);
+        }
+        .edition-group-badge-condition {
+          background: var(--ap-category-condition-bg);
+          color: var(--ap-category-condition-fg);
+        }
+        .edition-group-badge-action {
+          background: var(--ap-category-action-bg);
+          color: var(--ap-category-action-fg);
+        }
+        .edition-group-divider {
+          flex: 1;
+          height: 1px;
+          background: var(--divider-color, #e0e0e0);
+        }
+        .edition-group-cards {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        .edition-group-empty {
+          margin: 0;
+          padding: 12px 14px;
+          font-size: 13px;
+          color: var(--secondary-text-color, #666);
+        }
+        .edition-block-card {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          height: 64px;
+          padding: 0 14px;
+          border: 1px solid var(--divider-color, #e0e0e0);
+          border-radius: 10px;
+          background: var(--ap-surface, var(--card-background-color, #fff));
+        }
+        .edition-block-card > svg:first-child {
+          flex-shrink: 0;
+          color: var(--secondary-text-color, #666);
+        }
+        .edition-block-icon {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+          width: 32px;
+          height: 32px;
+          border-radius: 8px;
+        }
+        .edition-block-icon-trigger {
+          background: var(--ap-category-trigger-bg);
+          color: var(--ap-category-trigger-fg);
+        }
+        .edition-block-icon-condition {
+          background: var(--ap-category-condition-bg);
+          color: var(--ap-category-condition-fg);
+        }
+        .edition-block-icon-action {
+          background: var(--ap-category-action-bg);
+          color: var(--ap-category-action-fg);
+        }
+        .edition-block-text {
+          display: flex;
+          flex-direction: column;
+          flex: 1;
+          min-width: 0;
+          gap: 3px;
+        }
+        .edition-block-title {
+          font-size: 14px;
+          font-weight: 700;
+          color: var(--primary-text-color, #212121);
+        }
+        .edition-block-summary {
+          font-size: 12px;
+          color: var(--secondary-text-color, #666);
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .edition-block-kebab {
+          flex-shrink: 0;
+          opacity: 0.6;
+          pointer-events: none;
+        }
+        .edition-group-add {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          height: 38px;
+          border: 1px solid var(--divider-color, #e0e0e0);
+          border-radius: 10px;
+          background: transparent;
+          color: var(--secondary-text-color, #666);
+          font-family: inherit;
+          font-size: 13px;
+        }
+        .edition-group-add:disabled {
+          opacity: 0.6;
+          pointer-events: none;
         }
         .popup-card.popup-edition-help {
           max-width: 440px;
@@ -3573,6 +4022,18 @@ class AutomationPlusPanel extends HTMLElement {
     if (editionTitleBtn) {
       editionTitleBtn.addEventListener("click", () => {
         if (this._editionAutomation) this._openDetailPopup(this._editionAutomation);
+      });
+    }
+
+    const editionViewSelector = root.querySelector(".edition-view-selector");
+    if (editionViewSelector) {
+      editionViewSelector.addEventListener("click", (event) => {
+        const segment = event.target.closest(".edition-segment[data-sub-view]");
+        if (!segment || segment.classList.contains("disabled")) return;
+        const subView = segment.dataset.subView;
+        if (subView === this._editionSubView) return;
+        this._editionSubView = subView;
+        this._render();
       });
     }
 

@@ -23,7 +23,7 @@
 // affiché dans le badge du header ; DEBUG_BUILD_DATE n'est plus dans le
 // header (retiré sur demande) et sera affiché dans le futur bloc « À propos »
 // de la page Réglages (pas encore codée).
-const DEBUG_VERSION = "0.7.0-beta.2";
+const DEBUG_VERSION = "0.7.0-beta.3";
 const DEBUG_BUILD_DATE = "2026-09-11";
 
 const REPO_URL = "https://github.com/la12lab/ha-automation-plus";
@@ -311,9 +311,6 @@ class AutomationPlusPanel extends HTMLElement {
     this._detailPopupFor = null;
     this._detailDraft = null;
     this._detailSaving = false;
-    // Section "Avancé" (renommage entity_id, issue #81) : repliée par
-    // défaut à chaque ouverture du popup, voir _openDetailPopup().
-    this._detailAdvancedOpen = false;
     // Mode de stockage actif (issue backend, voir AutomationPlusSettingsView)
     // — conditionne l'item "Télécharger" du menu kebab (dossier dédié
     // uniquement). Chargé une fois au premier hass, voir _loadStorageMode().
@@ -768,7 +765,18 @@ class AutomationPlusPanel extends HTMLElement {
       const active = filter.id === this._statusFilter;
       return `<button class="status-chip${active ? " active" : ""}" data-value="${filter.id}">${filter.label}</button>`;
     }).join("");
-    return `<div class="status-filters">${chips}</div>`;
+    // Bouton désactivé (création pas encore codée) — même pattern que les
+    // autres actions pas encore câblées (title + attribut disabled), voir
+    // .edition-lock-btn/.settings-btn.disabled.
+    return `
+      <div class="status-filters">
+        <button class="popup-btn popup-btn-primary new-automation-btn" title="Bientôt disponible" disabled>
+          ${this._icon(ICON_PLUS, 14)}<span>Nouvelle automatisation</span>
+        </button>
+        <span class="status-filters-separator"></span>
+        ${chips}
+      </div>
+    `;
   }
 
   _renderTableHeader() {
@@ -1058,10 +1066,27 @@ class AutomationPlusPanel extends HTMLElement {
           </div>
           <div class="popup-body">
             <div class="detail-field">
-              <span class="detail-label">Nom</span>
+              <div class="detail-label-row">
+                <span class="detail-label">Nom</span>
+                <span class="detail-id">ID #${escapeHtml(draft.id || "")}</span>
+              </div>
               <div class="detail-input detail-name-row">
                 <input type="text" data-field="name" value="${escapeHtml(draft.name)}" style="border:none;background:transparent;flex:1;font:inherit;color:inherit;outline:none;padding:0;" />
                 ${this._icon(ICON_EDIT, 14)}
+              </div>
+            </div>
+            <div class="detail-field">
+              <span class="detail-label">Entity ID</span>
+              <div class="detail-entity-input">
+                <input type="text" data-field="entityId" value="${escapeHtml(draft.entityId)}" style="border:none;background:transparent;flex:1;font:inherit;color:inherit;outline:none;padding:0;" />
+                ${this._icon(ICON_EDIT, 14)}
+              </div>
+              <button type="button" class="detail-regenerate-btn" data-action="regenerate-entity-id">
+                ${this._icon(ICON_REFRESH_CW, 12)}<span>Régénérer depuis le nom</span>
+              </button>
+              <div class="detail-entity-warning">
+                ${this._icon(ICON_ALERT_TRIANGLE, 12)}
+                <span>Renommer l'entity ID peut casser des automatisations, scripts ou tableaux de bord qui le référencent.</span>
               </div>
             </div>
             <div class="detail-field">
@@ -1071,6 +1096,7 @@ class AutomationPlusPanel extends HTMLElement {
                 <input type="text" class="detail-input" data-field="icon" value="${escapeHtml(draft.icon)}" placeholder="mdi:robot" style="flex:1;" />
               </div>
             </div>
+            <div class="detail-separator"></div>
             <div class="detail-field">
               <span class="detail-label">Pièce</span>
               <select class="detail-select" data-field="areaId">${areaOptions}</select>
@@ -1096,31 +1122,6 @@ class AutomationPlusPanel extends HTMLElement {
                 <span class="state-toggle-knob"></span>
               </span>
             </div>
-            <div class="detail-separator"></div>
-            <div class="detail-advanced-header ${this._detailAdvancedOpen ? "open" : ""}" data-action="toggle-advanced">
-              ${this._icon(ICON_CHEVRON_DOWN, 14)}
-              <span>Avancé</span>
-            </div>
-            ${
-              this._detailAdvancedOpen
-                ? `
-            <div class="detail-advanced-content">
-              <span class="detail-label">Entity ID</span>
-              <div class="detail-entity-input">
-                <input type="text" data-field="entityId" value="${escapeHtml(draft.entityId)}" style="border:none;background:transparent;flex:1;font:inherit;color:inherit;outline:none;padding:0;" />
-                ${this._icon(ICON_EDIT, 14)}
-              </div>
-              <button type="button" class="detail-regenerate-btn" data-action="regenerate-entity-id">
-                ${this._icon(ICON_REFRESH_CW, 12)}<span>Régénérer depuis le nom</span>
-              </button>
-              <div class="detail-entity-warning">
-                ${this._icon(ICON_ALERT_TRIANGLE, 12)}
-                <span>Renommer l'entity ID peut casser des automatisations, scripts ou tableaux de bord qui le référencent.</span>
-              </div>
-            </div>
-            `
-                : ""
-            }
           </div>
           <div class="popup-footer">
             <button class="popup-btn popup-btn-secondary" data-action="cancel-detail" ${this._detailSaving ? "disabled" : ""}>Annuler</button>
@@ -1203,8 +1204,8 @@ class AutomationPlusPanel extends HTMLElement {
     // voir régression scroll v0.6.8).
     this._loadRegistries();
     this._detailPopupFor = automation.entity_id;
-    this._detailAdvancedOpen = false;
     this._detailDraft = {
+      id: automation.id,
       name: automation.name,
       icon: automation.icon || "",
       areaId: automation.area_id || "",
@@ -2001,6 +2002,7 @@ class AutomationPlusPanel extends HTMLElement {
           position: relative;
           height: 100vh;
           overflow: hidden;
+          background: var(--primary-background-color, #fafafa);
           font-family: var(--paper-font-body1_-_font-family, sans-serif);
         }
         .header {
@@ -2303,6 +2305,11 @@ class AutomationPlusPanel extends HTMLElement {
           margin-left: auto;
           flex-shrink: 0;
         }
+        .status-filters-separator {
+          width: 1px;
+          height: 20px;
+          background: var(--divider-color, #e0e0e0);
+        }
         .status-chip {
           box-sizing: border-box;
           border: 1px solid transparent;
@@ -2411,6 +2418,7 @@ class AutomationPlusPanel extends HTMLElement {
           gap: 12px;
           align-items: center;
           padding: 16px;
+          background: var(--card-background-color, #fff);
           border-bottom: 1px solid var(--divider-color, #e0e0e0);
           cursor: pointer;
         }
@@ -2725,6 +2733,16 @@ class AutomationPlusPanel extends HTMLElement {
           color: var(--secondary-text-color, #666);
           line-height: 1.2;
         }
+        .detail-label-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+        }
+        .detail-id {
+          font-size: 10px;
+          font-weight: 400;
+          color: var(--secondary-text-color, #666);
+        }
         .detail-input,
         .detail-select {
           height: 36px;
@@ -2825,32 +2843,6 @@ class AutomationPlusPanel extends HTMLElement {
           font-size: 11px;
           color: var(--secondary-text-color, #666);
         }
-        .detail-advanced-header {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          cursor: pointer;
-          user-select: none;
-        }
-        .detail-advanced-header span {
-          font-size: 13px;
-          font-weight: 700;
-          color: var(--primary-text-color, #212121);
-        }
-        .detail-advanced-header svg {
-          color: var(--secondary-text-color, #666);
-          flex-shrink: 0;
-          transform: rotate(-90deg);
-          transition: transform 0.15s ease;
-        }
-        .detail-advanced-header.open svg {
-          transform: rotate(0deg);
-        }
-        .detail-advanced-content {
-          display: flex;
-          flex-direction: column;
-          gap: 8px;
-        }
         .detail-entity-input {
           display: flex;
           align-items: center;
@@ -2913,11 +2905,21 @@ class AutomationPlusPanel extends HTMLElement {
           border: none;
           background: var(--primary-color, #03a9f4);
           color: #fff;
-          display: flex;
+          display: none;
           align-items: center;
           justify-content: center;
           cursor: pointer;
           box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+        }
+        /* Le bouton "Nouvelle automatisation" de la toolbar (.new-automation-btn)
+        couvre ce rôle sur desktop/tablette ; le FAB ne réapparaît qu'en
+        largeur smartphone, où la toolbar est trop étroite pour l'accueillir
+        lisiblement — voir claude-integration/RESPONSIVE-SMARTPHONE.md pour
+        la piste générale du chantier responsive. */
+        @media (max-width: 600px) {
+          .fab {
+            display: flex;
+          }
         }
         .toast-container {
           position: fixed;
@@ -2976,7 +2978,7 @@ class AutomationPlusPanel extends HTMLElement {
           gap: 16px;
         }
         .settings-block {
-          background: color-mix(in srgb, var(--card-background-color, #fff) 94%, var(--primary-text-color, #212121) 6%);
+          background: var(--card-background-color, #fff);
           border: 1px solid var(--divider-color, #e0e0e0);
           border-radius: 12px;
           padding: 20px;
@@ -3449,9 +3451,6 @@ class AutomationPlusPanel extends HTMLElement {
           this._detailDraft.labelIds = this._detailDraft.labelIds.filter(
             (id) => id !== actionEl.dataset.labelId
           );
-          this._render();
-        } else if (action === "toggle-advanced") {
-          this._detailAdvancedOpen = !this._detailAdvancedOpen;
           this._render();
         } else if (action === "regenerate-entity-id") {
           const slug = this._slugifyName(this._detailDraft.name);

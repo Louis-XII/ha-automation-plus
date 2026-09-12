@@ -23,8 +23,8 @@
 // affiché dans le badge du header ; DEBUG_BUILD_DATE n'est plus dans le
 // header (retiré sur demande) et sera affiché dans le futur bloc « À propos »
 // de la page Réglages (pas encore codée).
-const DEBUG_VERSION = "0.6.13";
-const DEBUG_BUILD_DATE = "2026-09-08";
+const DEBUG_VERSION = "0.7.0";
+const DEBUG_BUILD_DATE = "2026-09-12";
 
 const REPO_URL = "https://github.com/la12lab/ha-automation-plus";
 const ISSUES_URL = `${REPO_URL}/issues`;
@@ -195,6 +195,15 @@ const ICON_TOGGLE_RIGHT = `<rect width="20" height="12" x="2" y="6" rx="6" ry="6
 const ICON_TRASH = `<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>`;
 const ICON_MORE_VERTICAL = `<circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/>`;
 const ICON_ARROW_UP_DOWN = `<path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/>`;
+// Page Édition, mode Code (issue #87) — sélecteur de vue (Liste/Graphe/Code)
+// et bandeau lecture seule.
+const ICON_LIST = `<path d="M3 12h.01"/><path d="M3 18h.01"/><path d="M3 6h.01"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M8 6h13"/>`;
+const ICON_GIT_FORK = `<circle cx="12" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><path d="M18 9v1a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V9"/><path d="M12 12v3"/>`;
+const ICON_FILE_CODE = `<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="m10 13-2 2 2 2"/><path d="m14 13 2 2-2 2"/>`;
+const ICON_LOCK = `<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>`;
+const ICON_UNDO_2 = `<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11"/>`;
+const ICON_REDO_2 = `<path d="m15 14 5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5v0A5.5 5.5 0 0 0 9.5 20H13"/>`;
+const ICON_REFRESH_CW = `<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>`;
 
 function escapeHtml(value) {
   return String(value)
@@ -320,6 +329,15 @@ class AutomationPlusPanel extends HTMLElement {
     // dernier rendu réel — permet à set hass() de sauter le re-render
     // complet quand rien de visible n'a changé, voir _automationSnapshot().
     this._lastAutomationSnapshot = null;
+
+    // Page Édition, mode Code (lecture seule — issue #87) : automatisation
+    // ciblée (objet enrichi, voir _getAutomations()) et état du YAML
+    // chargé/sérialisé côté client. Rechargé à chaque ouverture, jamais mis
+    // en cache d'une automatisation à l'autre. Liste/Graphe/Déverrouiller
+    // hors périmètre de ce lot (issues #88/#89/#90).
+    this._editionAutomation = null;
+    this._editionYaml = { loading: false, lines: null, error: null };
+    this._editionHelpOpen = false;
   }
 
   // Instantané minimal des entités automation.* pertinentes pour le rendu
@@ -389,6 +407,13 @@ class AutomationPlusPanel extends HTMLElement {
   set hass(value) {
     const isFirstAssignment = !this._hass;
     this._hass = value;
+
+    // Élévation carte/ligne dérivée du thème (voir --ap-surface dans
+    // _render) : nécessite de savoir si HA est en mode sombre. Appliqué sur
+    // la classList du host indépendamment du re-render conditionnel
+    // ci-dessous (snapshot d'automatisations) pour rester à jour même quand
+    // seul le thème change.
+    this.classList.toggle("ap-dark", !!value?.themes?.darkMode);
 
     // HA réassigne hass à chaque changement d'état de n'importe quelle
     // entité de l'installation, pas seulement les automatisations — un
@@ -747,7 +772,18 @@ class AutomationPlusPanel extends HTMLElement {
       const active = filter.id === this._statusFilter;
       return `<button class="status-chip${active ? " active" : ""}" data-value="${filter.id}">${filter.label}</button>`;
     }).join("");
-    return `<div class="status-filters">${chips}</div>`;
+    // Bouton désactivé (création pas encore codée) — même pattern que les
+    // autres actions pas encore câblées (title + attribut disabled), voir
+    // .edition-lock-btn/.settings-btn.disabled.
+    return `
+      <div class="status-filters">
+        <button class="popup-btn popup-btn-primary new-automation-btn" title="Bientôt disponible" disabled>
+          ${this._icon(ICON_PLUS, 14)}<span>Nouvelle automatisation</span>
+        </button>
+        <span class="status-filters-separator"></span>
+        ${chips}
+      </div>
+    `;
   }
 
   _renderTableHeader() {
@@ -772,7 +808,7 @@ class AutomationPlusPanel extends HTMLElement {
       ? `<span class="meta-badge">${this._icon(ICON_MAP_PIN, 13)}<span>${escapeHtml(automation.area)}</span></span>`
       : `<span class="meta-empty">—</span>`;
     return `
-      <div class="automation-row${stateOn ? "" : " automation-row-off"}">
+      <div class="automation-row${stateOn ? "" : " automation-row-off"}" data-entity-id="${escapeHtml(automation.entity_id)}">
         <div class="col-name" title="${escapeHtml(automation.name)}">
           <ha-icon class="row-icon" icon="${escapeHtml(automation.icon || "mdi:robot")}"></ha-icon>
           <div class="row-name-block">
@@ -806,13 +842,7 @@ class AutomationPlusPanel extends HTMLElement {
     const items = [
       { action: "more-info", icon: ICON_INFO, label: "Plus d'informations" },
       { action: "detail", icon: ICON_FILE_TEXT, label: "Détail" },
-      {
-        action: "edition",
-        icon: ICON_EDIT,
-        label: "Édition",
-        disabled: true,
-        title: "Page Édition pas encore disponible",
-      },
+      { action: "edition", icon: ICON_EDIT, label: "Édition" },
       { separator: true },
       {
         action: "download",
@@ -826,7 +856,7 @@ class AutomationPlusPanel extends HTMLElement {
         icon: ICON_COPY,
         label: "Dupliquer",
         disabled: true,
-        title: "Page Édition pas encore disponible",
+        title: "Pas encore disponible",
       },
       {
         action: "toggle-state",
@@ -857,6 +887,77 @@ class AutomationPlusPanel extends HTMLElement {
 
   _findAutomation(entityId) {
     return this._getAutomations().find((a) => a.entity_id === entityId) || null;
+  }
+
+  // Sérialise un objet JS (config d'automatisation renvoyée par
+  // GET config/automation/config/<id>) en lignes de texte YAML, pour
+  // affichage dans la page Édition (mode Code, lecture seule — #87).
+  // Volontairement générique, sans connaître les noms de champs HA
+  // (trigger/triggers, condition/conditions... le nommage a changé selon
+  // les versions HA, voir ARCHITECTURE.md §8) : sérialise fidèlement
+  // n'importe quelle clé présente. Pas destiné à un round-trip d'édition
+  // (hors périmètre de ce lot), uniquement à l'affichage.
+  _stringifyYamlScalar(value) {
+    if (value === null || value === undefined) return "null";
+    if (typeof value === "boolean" || typeof value === "number") return String(value);
+    if (typeof value !== "string") return JSON.stringify(value);
+    if (value === "") return '""';
+    const needsQuoting =
+      /^[\s"'>|*&!%#@`[\]{},:-]/.test(value) ||
+      /:\s|\s$/.test(value) ||
+      /^(true|false|null|yes|no|on|off|~)$/i.test(value) ||
+      /^-?\d+(\.\d+)?$/.test(value);
+    return needsQuoting ? JSON.stringify(value) : value;
+  }
+
+  _stringifyYaml(value, indent = 0) {
+    const lines = [];
+    const pad = (level) => "  ".repeat(level);
+    const walkMapping = (obj, level) => {
+      for (const key of Object.keys(obj)) {
+        const v = obj[key];
+        if (v !== null && typeof v === "object") {
+          const empty = Array.isArray(v) ? v.length === 0 : Object.keys(v).length === 0;
+          if (empty) {
+            lines.push(`${pad(level)}${key}: ${Array.isArray(v) ? "[]" : "{}"}`);
+          } else {
+            lines.push(`${pad(level)}${key}:`);
+            walkAny(v, level + 1);
+          }
+        } else {
+          lines.push(`${pad(level)}${key}: ${this._stringifyYamlScalar(v)}`);
+        }
+      }
+    };
+    const walkSequence = (arr, level) => {
+      for (const item of arr) {
+        if (item !== null && typeof item === "object" && !Array.isArray(item)) {
+          const keys = Object.keys(item);
+          if (keys.length === 0) {
+            lines.push(`${pad(level)}- {}`);
+            continue;
+          }
+          const [firstKey, ...restKeys] = keys;
+          const firstValue = item[firstKey];
+          const firstIsObject = firstValue !== null && typeof firstValue === "object";
+          lines.push(`${pad(level)}- ${firstKey}:${firstIsObject ? "" : ` ${this._stringifyYamlScalar(firstValue)}`}`);
+          if (firstIsObject) walkAny(firstValue, level + 2);
+          if (restKeys.length) walkMapping(Object.fromEntries(restKeys.map((k) => [k, item[k]])), level + 1);
+        } else if (Array.isArray(item)) {
+          lines.push(`${pad(level)}-`);
+          walkSequence(item, level + 1);
+        } else {
+          lines.push(`${pad(level)}- ${this._stringifyYamlScalar(item)}`);
+        }
+      }
+    };
+    const walkAny = (val, level) => {
+      if (Array.isArray(val)) walkSequence(val, level);
+      else if (val !== null && typeof val === "object") walkMapping(val, level);
+      else lines.push(`${pad(level)}${this._stringifyYamlScalar(val)}`);
+    };
+    walkAny(value, indent);
+    return lines;
   }
 
   // Positionne le menu Options (.options-menu, position: fixed) par rapport
@@ -972,10 +1073,27 @@ class AutomationPlusPanel extends HTMLElement {
           </div>
           <div class="popup-body">
             <div class="detail-field">
-              <span class="detail-label">Nom</span>
+              <div class="detail-label-row">
+                <span class="detail-label">Nom</span>
+                <span class="detail-id">ID #${escapeHtml(draft.id || "")}</span>
+              </div>
               <div class="detail-input detail-name-row">
                 <input type="text" data-field="name" value="${escapeHtml(draft.name)}" style="border:none;background:transparent;flex:1;font:inherit;color:inherit;outline:none;padding:0;" />
                 ${this._icon(ICON_EDIT, 14)}
+              </div>
+            </div>
+            <div class="detail-field">
+              <span class="detail-label">Entity ID</span>
+              <div class="detail-entity-input">
+                <input type="text" data-field="entityId" value="${escapeHtml(draft.entityId)}" style="border:none;background:transparent;flex:1;color:inherit;outline:none;padding:0;" />
+                ${this._icon(ICON_EDIT, 14)}
+              </div>
+              <button type="button" class="detail-regenerate-btn" data-action="regenerate-entity-id">
+                ${this._icon(ICON_REFRESH_CW, 12)}<span>Régénérer depuis le nom</span>
+              </button>
+              <div class="detail-entity-warning">
+                ${this._icon(ICON_ALERT_TRIANGLE, 12)}
+                <span>Renommer l'entity ID peut casser des automatisations, scripts ou tableaux de bord qui le référencent.</span>
               </div>
             </div>
             <div class="detail-field">
@@ -985,6 +1103,7 @@ class AutomationPlusPanel extends HTMLElement {
                 <input type="text" class="detail-input" data-field="icon" value="${escapeHtml(draft.icon)}" placeholder="mdi:robot" style="flex:1;" />
               </div>
             </div>
+            <div class="detail-separator"></div>
             <div class="detail-field">
               <span class="detail-label">Pièce</span>
               <select class="detail-select" data-field="areaId">${areaOptions}</select>
@@ -1033,6 +1152,55 @@ class AutomationPlusPanel extends HTMLElement {
     this._render();
   }
 
+  // Ouvre la page Édition (mode Code, lecture seule — #87), depuis le menu
+  // Options ("Édition") ou un clic sur la ligne (hors toggle État/menu
+  // Options, voir le délégué de clic de .list-container).
+  _openEdition(automation) {
+    if (!automation) return;
+    this._optionsMenuOpenFor = null;
+    this._view = "edition";
+    this._editionAutomation = automation;
+    this._editionHelpOpen = false;
+    this._render();
+    this._loadEditionYaml();
+  }
+
+  async _loadEditionYaml() {
+    if (!this._hass || !this._editionAutomation) return;
+    // Mode dossier dédié : l'API native HA est câblée en dur sur
+    // automations.yaml, inutilisable ici (voir ARCHITECTURE.md §8) — route
+    // backend dédiée pas encore construite (#92). Erreur explicite plutôt
+    // qu'un GET voué à échouer silencieusement.
+    if (this._storageMode === "folder") {
+      this._editionYaml = {
+        loading: false,
+        lines: null,
+        error: "Mode dossier dédié : la page Édition n'est pas encore disponible pour ce mode.",
+      };
+      this._render();
+      return;
+    }
+    this._editionYaml = { loading: true, lines: null, error: null };
+    this._render();
+    try {
+      const config = await this._hass.callApi(
+        "GET",
+        `config/automation/config/${this._editionAutomation.id}`
+      );
+      this._editionYaml = { loading: false, lines: this._stringifyYaml(config), error: null };
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("AutomationPlus: échec du chargement du YAML de l'automatisation", err);
+      this._editionYaml = {
+        loading: false,
+        lines: null,
+        error: "Impossible de charger le YAML de cette automatisation.",
+      };
+    } finally {
+      this._render();
+    }
+  }
+
   _openDetailPopup(automation) {
     // Rafraîchit les registres HA à chaque ouverture (issue #59) : une
     // étiquette/pièce/catégorie créée après le chargement initial du panel
@@ -1044,6 +1212,7 @@ class AutomationPlusPanel extends HTMLElement {
     this._loadRegistries();
     this._detailPopupFor = automation.entity_id;
     this._detailDraft = {
+      id: automation.id,
       name: automation.name,
       icon: automation.icon || "",
       areaId: automation.area_id || "",
@@ -1056,6 +1225,10 @@ class AutomationPlusPanel extends HTMLElement {
       // affiché comme override de registre.
       originalName: automation.name,
       originalIcon: automation.icon || "",
+      // Même logique pour l'entity_id (issue #81) : new_entity_id n'est
+      // envoyé au WS que si ce champ diffère réellement de l'original.
+      entityId: automation.entity_id,
+      originalEntityId: automation.entity_id,
     };
     this._render();
   }
@@ -1096,6 +1269,22 @@ class AutomationPlusPanel extends HTMLElement {
     }
   }
 
+  // Slug pour le bouton "Régénérer depuis le nom" (issue #81) : jamais
+  // appliqué automatiquement, seulement un point de départ que l'utilisateur
+  // peut encore éditer avant d'enregistrer.
+  _slugifyName(name) {
+    const diacritics = new RegExp(
+      "[" + String.fromCharCode(0x0300) + "-" + String.fromCharCode(0x036f) + "]",
+      "g"
+    );
+    return (name || "")
+      .normalize("NFD")
+      .replace(diacritics, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "");
+  }
+
   // Enregistrement des métadonnées registre (nom/icône/pièce/catégorie/
   // étiquettes) via l'API WebSocket standard HA — jamais d'écriture directe
   // de fichier. L'activation (marche/arrêt) n'est pas un champ du registre :
@@ -1104,6 +1293,14 @@ class AutomationPlusPanel extends HTMLElement {
     const entityId = this._detailPopupFor;
     const draft = this._detailDraft;
     if (!entityId || !draft || this._detailSaving) return;
+    const trimmedEntityId = draft.entityId.trim();
+    const entityIdChanged = trimmedEntityId !== draft.originalEntityId.trim();
+    if (entityIdChanged && !/^automation\.[a-z0-9_]+$/.test(trimmedEntityId)) {
+      this._showErrorToast(
+        "Entity ID invalide — format attendu : automation.mon_nom (minuscules, chiffres, underscores)."
+      );
+      return;
+    }
     this._detailSaving = true;
     this._render();
     try {
@@ -1118,12 +1315,15 @@ class AutomationPlusPanel extends HTMLElement {
       };
       // Voir _openDetailPopup() : name/icon omis du payload (plutôt
       // qu'envoyés à blanc) tant que l'utilisateur ne les a pas réellement
-      // modifiés (issue #68).
+      // modifiés (issue #68). Même logique pour entity_id (issue #81).
       if (trimmedName !== draft.originalName.trim()) {
         wsPayload.name = trimmedName || null;
       }
       if (trimmedIcon !== draft.originalIcon.trim()) {
         wsPayload.icon = trimmedIcon || null;
+      }
+      if (entityIdChanged) {
+        wsPayload.new_entity_id = trimmedEntityId;
       }
       await this._hass.callWS(wsPayload);
       // Reflète immédiatement pièce/catégorie/étiquettes dans le cache local
@@ -1131,20 +1331,33 @@ class AutomationPlusPanel extends HTMLElement {
       // chips-filtres restent périmés jusqu'au prochain rechargement complet
       // de la page, donnant l'impression que l'enregistrement a échoué
       // (issue #67).
+      const targetEntityId = entityIdChanged ? trimmedEntityId : entityId;
       const registryEntry = this._entityRegistryByEntityId.get(entityId);
       if (registryEntry) {
-        this._entityRegistryByEntityId.set(entityId, {
+        const updatedEntry = {
           ...registryEntry,
+          entity_id: targetEntityId,
           area_id: draft.areaId || null,
           categories: { ...registryEntry.categories, automation: draft.categoryId || null },
           labels: draft.labelIds,
-        });
+        };
+        // L'ancienne clé est volontairement conservée (pas supprimée) : tant
+        // que hass.states n'a pas propagé le nouvel entity_id (délai HA hors
+        // de notre contrôle), une ligne encore indexée sous l'ancien id doit
+        // pouvoir résoudre son registre — nettoyée naturellement par le
+        // prochain _loadRegistries() complet.
+        this._entityRegistryByEntityId.set(entityId, updatedEntry);
+        if (entityIdChanged) this._entityRegistryByEntityId.set(targetEntityId, updatedEntry);
       }
+      // Lu sur l'ancien entity_id (dernière valeur connue avant que HA ne
+      // propage le renommage côté states), mais tout appel de service qui
+      // suit doit cibler le nouveau — HA ne reconnaît plus l'ancien dès que
+      // le WS ci-dessus a réussi.
       const automation = this._findAutomation(entityId);
       const currentlyOn = automation ? automation.state === "on" : null;
       if (currentlyOn !== null && currentlyOn !== draft.activated) {
         await this._hass.callService("automation", draft.activated ? "turn_on" : "turn_off", {
-          entity_id: entityId,
+          entity_id: targetEntityId,
         });
       }
       this._detailPopupFor = null;
@@ -1152,7 +1365,17 @@ class AutomationPlusPanel extends HTMLElement {
     } catch (err) {
       // eslint-disable-next-line no-console
       console.error("AutomationPlus: échec de l'enregistrement des détails", entityId, err);
-      this._showErrorToast("Impossible d'enregistrer les modifications.");
+      // Message dédié si le renommage entity_id était en cause (issue #81) :
+      // HA renvoie une erreur WS peu explicite sur ce champ précis (ID déjà
+      // utilisé, ou cas encore mal géré côté core — voir #133209/#115334),
+      // pas la peine de répercuter le message brut à l'utilisateur.
+      if (entityIdChanged) {
+        this._showErrorToast(
+          "Impossible de renommer l'entity ID — vérifie qu'il n'est pas déjà utilisé, et que les autres champs ont bien été enregistrés."
+        );
+      } else {
+        this._showErrorToast("Impossible d'enregistrer les modifications.");
+      }
     } finally {
       this._detailSaving = false;
       this._render();
@@ -1230,8 +1453,8 @@ class AutomationPlusPanel extends HTMLElement {
   }
 
   // Dispatch des actions du menu Options (kebab) d'une ligne, voir
-  // _renderOptionsMenu(). "edition"/"duplicate" restent désactivés côté
-  // rendu (page Édition pas encore codée) — pas d'action associée ici.
+  // _renderOptionsMenu(). "duplicate" reste désactivé côté rendu (pas
+  // encore codé) — pas d'action associée ici.
   _handleOptionsAction(action, entityId) {
     const automation = this._findAutomation(entityId);
     if (!automation) {
@@ -1243,6 +1466,8 @@ class AutomationPlusPanel extends HTMLElement {
       this._render();
     } else if (action === "detail") {
       this._openDetailPopup(automation);
+    } else if (action === "edition") {
+      this._openEdition(automation);
     } else if (action === "download") {
       this._downloadAutomation(automation);
       this._render();
@@ -1610,7 +1835,7 @@ class AutomationPlusPanel extends HTMLElement {
           </a>
         </div>
         <p class="about-credits">AutomationPlus — intégration Home Assistant open source</p>
-        <p class="about-credits">${DEBUG_BUILD_DATE.slice(0, 4)} · GPL-3.0 License · Développeur indépendant · 🇫🇷 codé en France</p>
+        <p class="about-credits">${DEBUG_BUILD_DATE.slice(0, 4)} · GPL-3.0 License · Développeur indépendant · 🇫🇷 Claudé en France</p>
       </div>
     `;
   }
@@ -1635,6 +1860,7 @@ class AutomationPlusPanel extends HTMLElement {
           ${this._icon(ICON_SEARCH, 16)}
           <input class="search-input" type="text" placeholder="Rechercher une automatisation..." value="${escapeHtml(this._filterText)}" />
         </div>
+        <span class="toolbar-separator"></span>
         <div class="regroup-wrap">
           <button class="regroup-btn">
             ${this._icon(ICON_LAYERS, 16)}
@@ -1663,6 +1889,117 @@ class AutomationPlusPanel extends HTMLElement {
     `;
   }
 
+  // Toolbar de la page Édition — remplace le Header Global (voir _render()),
+  // propre à ce _view. Sélecteur Liste/Graphe/Code : seul Code est
+  // fonctionnel dans ce lot (#87), Liste/Graphe restent des segments
+  // visuels inertes (pas encore codés, #86 pour la suite). Déverrouiller
+  // affiché mais désactivé : l'édition n'est pas encore possible (#88).
+  _renderEditionToolbar() {
+    const automation = this._editionAutomation;
+    const name = automation ? automation.name : "";
+    return `
+      <div class="header edition-toolbar">
+        <div class="header-left">
+          <button class="icon-button back-btn" title="Retour au Dashboard">
+            ${this._icon(ICON_ARROW_LEFT, 22)}
+          </button>
+          <button class="edition-title" data-action="edit-title" title="Détails de l'automatisation">
+            <span>${escapeHtml(name)}</span>
+            ${this._icon(ICON_EDIT, 14)}
+          </button>
+        </div>
+        <div class="edition-view-selector">
+          <span class="edition-segment disabled" title="Pas encore disponible">
+            ${this._icon(ICON_LIST, 14)}<span>Liste</span>
+          </span>
+          <span class="edition-segment disabled" title="Pas encore disponible">
+            ${this._icon(ICON_GIT_FORK, 14)}<span>Graphe</span>
+          </span>
+          <span class="edition-segment active">
+            ${this._icon(ICON_FILE_CODE, 14)}<span>Code</span>
+          </span>
+        </div>
+        <div class="header-actions">
+          <button class="edition-lock-btn" title="Pas encore disponible" disabled>
+            ${this._icon(ICON_LOCK, 14)}<span>Déverrouiller</span>
+          </button>
+          <span class="edition-actions-separator"></span>
+          <button class="icon-button" title="Pas encore disponible" disabled>
+            ${this._icon(ICON_UNDO_2, 20)}
+          </button>
+          <button class="icon-button" title="Pas encore disponible" disabled>
+            ${this._icon(ICON_REDO_2, 20)}
+          </button>
+          <button class="popup-btn popup-btn-secondary" title="Pas encore disponible" disabled>Annuler</button>
+          <button class="popup-btn popup-btn-primary" title="Pas encore disponible" disabled>
+            ${this._icon(ICON_CHECK, 14)}<span>Enregistrer</span>
+          </button>
+          <span class="edition-actions-separator"></span>
+          <button class="icon-button edition-help-btn" title="Aide">
+            ${this._icon(ICON_HELP_CIRCLE, 22)}
+          </button>
+          <button class="icon-button settings-btn-header" title="Paramètres">
+            ${this._icon(ICON_SETTINGS, 22)}
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  // Contenu de la page Édition, mode Code (lecture seule — #87) : bandeau
+  // + gouttière/lignes dans une seule zone scrollable commune (gouttière et
+  // code doivent défiler ensemble, pas indépendamment).
+  _renderEditionView() {
+    const state = this._editionYaml;
+    let bodyHtml;
+    if (state.loading) {
+      bodyHtml = `<p class="edition-status-text">Chargement du YAML…</p>`;
+    } else if (state.error) {
+      bodyHtml = `<p class="edition-status-text edition-status-error">${escapeHtml(state.error)}</p>`;
+    } else if (state.lines) {
+      const gutterHtml = state.lines
+        .map((_, index) => `<span class="edition-line-number">${index + 1}</span>`)
+        .join("");
+      const codeHtml = state.lines
+        .map((line) => `<span class="edition-line-text">${line ? escapeHtml(line) : " "}</span>`)
+        .join("");
+      bodyHtml = `
+        <div class="edition-editor-card">
+          <div class="edition-gutter">${gutterHtml}</div>
+          <div class="edition-code">${codeHtml}</div>
+        </div>
+      `;
+    } else {
+      bodyHtml = "";
+    }
+    return `
+      <div class="edition-readonly-banner">
+        ${this._icon(ICON_LOCK, 14)}
+        <span>Lecture seule — l'édition sera bientôt disponible.</span>
+      </div>
+      <div class="scroll-area edition-scroll-area">${bodyHtml}</div>
+    `;
+  }
+
+  // Popup Aide de la page Édition — contenu à venir, même pattern que les
+  // blocs "Bientôt disponible" du reste du panel (voir issue #83 pour la
+  // rédaction du vrai contenu, pas propre à ce popup).
+  _renderEditionHelpPopup() {
+    return `
+      <div class="popup-overlay" data-popup="edition-help">
+        <div class="popup-card popup-edition-help">
+          <div class="popup-header">
+            <div class="popup-header-title"><span>Aide</span></div>
+            <button class="popup-close" data-action="close-edition-help" title="Fermer">${this._icon(ICON_X, 14)}</button>
+          </div>
+          <div class="popup-body">
+            <p class="popup-text-secondary">Contenu à venir.</p>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   _render() {
     if (!this.shadowRoot) return;
     this.shadowRoot.innerHTML = `
@@ -1673,7 +2010,41 @@ class AutomationPlusPanel extends HTMLElement {
           position: relative;
           height: 100vh;
           overflow: hidden;
+          background: var(--primary-background-color, #fafafa);
           font-family: var(--paper-font-body1_-_font-family, sans-serif);
+          /* Surface élevée (carte/ligne) dérivée de la couleur de page plutôt
+             que de --card-background-color seul : sur certains thèmes HA
+             custom, --card-background-color est quasi identique à
+             --primary-background-color et ne produit aucun contraste
+             visible. On garde la teinte du thème (color-mix sur la couleur
+             de page) tout en garantissant un écart de clarté, sur le modèle
+             iOS listes groupées — plus clair en mode clair, plus sombre en
+             mode sombre. Voir .ap-dark ci-dessous pour la variante sombre.
+             Écart volontairement marqué (40%/50%, pas 6%/12%, 15%/25% ni
+             28%/38%) : les versions précédentes ont toutes été jugées trop
+             discrètes. */
+          --ap-surface: color-mix(in srgb, var(--primary-background-color, #fafafa) 60%, white 40%);
+          /* Fond des lignes désactivées : gris neutre figé (pas dérivé de
+             --secondary-background-color) — sur un thème custom très
+             coloré, cette variable hérite de la teinte du thème et un état
+             "désactivé" qui garde cette teinte se lit mal comme du gris. */
+          --ap-off-surface: #e4e4e4;
+          /* Fond des boutons (Regrouper/Trier/badges état/Déverrouiller/
+             Réglages/etc.) : figé blanc/gris foncé, jamais dérivé de
+             --card-background-color ni --primary-color du thème actif — sur
+             un thème custom, ces variables peuvent rendre les boutons
+             invisibles ou disgracieux. Couleurs d'accent également figées
+             (pas var(--primary-color)) : #03a9f4 (bleu, état "activé"/action
+             principale, cohérent avec .state-toggle.on) et #8e8e93 (gris,
+             état "désactivé", cohérent avec le fond off de .state-toggle). */
+          --ap-btn-bg: #ffffff;
+          --ap-accent-blue: #03a9f4;
+          --ap-accent-grey: #8e8e93;
+        }
+        :host(.ap-dark) {
+          --ap-surface: color-mix(in srgb, var(--primary-background-color, #111111) 50%, black 50%);
+          --ap-off-surface: #3a3a3a;
+          --ap-btn-bg: #2c2c2e;
         }
         .header {
           display: flex;
@@ -1682,7 +2053,7 @@ class AutomationPlusPanel extends HTMLElement {
           flex-shrink: 0;
           height: 64px;
           padding: 0 16px;
-          background: var(--card-background-color, #fff);
+          background: var(--ap-surface, var(--card-background-color, #fff));
           border-bottom: 1px solid var(--divider-color, #e0e0e0);
         }
         .header-left {
@@ -1730,6 +2101,153 @@ class AutomationPlusPanel extends HTMLElement {
           align-items: center;
           gap: 4px;
         }
+        .edition-toolbar {
+          gap: 12px;
+        }
+        .edition-actions-separator {
+          width: 1px;
+          height: 22px;
+          margin: 0 6px;
+          background: var(--divider-color, #e0e0e0);
+          flex-shrink: 0;
+        }
+        .edition-lock-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          height: 34px;
+          padding: 0 16px;
+          border-radius: 8px;
+          border: 1px solid var(--ap-accent-blue, #03a9f4);
+          background: var(--ap-btn-bg, #fff);
+          color: var(--ap-accent-blue, #03a9f4);
+          font-family: inherit;
+          font-size: 13px;
+          cursor: pointer;
+          flex-shrink: 0;
+        }
+        .edition-lock-btn:disabled {
+          opacity: 0.6;
+          pointer-events: none;
+        }
+        .edition-title {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          height: 36px;
+          max-width: 360px;
+          padding: 0 12px;
+          border: 1px solid var(--divider-color, #e0e0e0);
+          border-radius: 8px;
+          background: var(--ap-btn-bg, #fff);
+          color: var(--primary-text-color, #212121);
+          font-family: inherit;
+          font-size: 15px;
+          font-weight: 700;
+          cursor: pointer;
+        }
+        .edition-title span {
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .edition-title svg {
+          flex-shrink: 0;
+          color: var(--secondary-text-color, #666);
+        }
+        .edition-view-selector {
+          display: flex;
+          align-items: center;
+          gap: 2px;
+          padding: 3px;
+          background: var(--secondary-background-color, #f1f3f4);
+          border-radius: 9px;
+          flex-shrink: 0;
+        }
+        .edition-segment {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 6px 12px;
+          border-radius: 6px;
+          font-size: 13px;
+          color: var(--secondary-text-color, #666);
+        }
+        .edition-segment.active {
+          background: var(--ap-btn-bg, #fff);
+          color: var(--primary-text-color, #212121);
+          font-weight: 700;
+          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.13);
+        }
+        .edition-segment.disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+        .edition-readonly-banner {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex-shrink: 0;
+          padding: 10px 20px;
+          background: var(--secondary-background-color, #f1f3f4);
+          border-bottom: 1px solid var(--divider-color, #e0e0e0);
+          color: var(--secondary-text-color, #666);
+          font-size: 13px;
+        }
+        .edition-scroll-area {
+          padding: 20px;
+        }
+        .edition-status-text {
+          margin: 0;
+          padding: 24px;
+          text-align: center;
+          color: var(--secondary-text-color, #666);
+          font-size: 13px;
+        }
+        .edition-status-error {
+          color: var(--error-color, #c62828);
+        }
+        .edition-editor-card {
+          display: flex;
+          min-height: 100%;
+          background: var(--ap-surface, var(--card-background-color, #fff));
+          border: 1px solid var(--divider-color, #e0e0e0);
+          border-radius: 8px;
+          overflow: hidden;
+        }
+        .edition-gutter {
+          display: flex;
+          flex-direction: column;
+          flex-shrink: 0;
+          padding: 16px 10px;
+          background: var(--secondary-background-color, #f1f3f4);
+          border-right: 1px solid var(--divider-color, #e0e0e0);
+          text-align: right;
+        }
+        .edition-line-number {
+          font-family: monospace;
+          font-size: 13px;
+          line-height: 1.6;
+          color: var(--secondary-text-color, #666);
+        }
+        .edition-code {
+          display: flex;
+          flex-direction: column;
+          flex: 1;
+          min-width: 0;
+          padding: 16px;
+          overflow-x: auto;
+        }
+        .edition-line-text {
+          font-family: monospace;
+          font-size: 13px;
+          line-height: 1.6;
+          color: var(--primary-text-color, #212121);
+          white-space: pre;
+        }
+        .popup-card.popup-edition-help {
+          max-width: 440px;
+        }
         .toolbar {
           display: flex;
           align-items: center;
@@ -1737,8 +2255,14 @@ class AutomationPlusPanel extends HTMLElement {
           gap: 12px;
           height: 48px;
           padding: 0 16px;
-          background: var(--card-background-color, #fff);
+          background: var(--ap-surface, var(--card-background-color, #fff));
           border-bottom: 1px solid var(--divider-color, #e0e0e0);
+        }
+        .toolbar-separator {
+          width: 1px;
+          height: 20px;
+          background: var(--divider-color, #e0e0e0);
+          flex-shrink: 0;
         }
         .search-wrap {
           display: flex;
@@ -1772,7 +2296,7 @@ class AutomationPlusPanel extends HTMLElement {
           padding: 0 12px;
           border: 1px solid var(--divider-color, #e0e0e0);
           border-radius: 8px;
-          background: var(--card-background-color, #fff);
+          background: var(--ap-btn-bg, #fff);
           color: var(--secondary-text-color, #666);
           font-size: 13px;
           cursor: pointer;
@@ -1787,7 +2311,7 @@ class AutomationPlusPanel extends HTMLElement {
           top: calc(100% + 4px);
           left: 0;
           width: 200px;
-          background: var(--card-background-color, #fff);
+          background: var(--ap-surface, var(--card-background-color, #fff));
           border: 1px solid var(--divider-color, #e0e0e0);
           border-radius: 8px;
           box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
@@ -1809,7 +2333,7 @@ class AutomationPlusPanel extends HTMLElement {
         .dropdown-option.selected {
           background: var(--primary-background-color, #fafafa);
           font-weight: 600;
-          color: var(--primary-color, #03a9f4);
+          color: var(--ap-accent-blue, #03a9f4);
         }
         .chips-row {
           display: flex;
@@ -1828,28 +2352,50 @@ class AutomationPlusPanel extends HTMLElement {
           margin-left: auto;
           flex-shrink: 0;
         }
+        .status-filters-separator {
+          width: 1px;
+          height: 20px;
+          background: var(--divider-color, #e0e0e0);
+        }
         .status-chip {
           box-sizing: border-box;
-          border: 1px solid transparent;
-          border-radius: 14px;
-          padding: 6px 12px;
+          display: flex;
+          align-items: center;
+          height: 32px;
+          border: 1px solid var(--ap-accent-blue, #03a9f4);
+          border-radius: 8px;
+          padding: 0 12px;
           font-size: 12px;
           font-weight: 400;
           font-family: inherit;
           cursor: pointer;
-          background: var(--secondary-background-color, #f1f3f4);
-          color: var(--secondary-text-color, #666);
+          background: var(--ap-btn-bg, #fff);
+          color: var(--ap-accent-blue, #03a9f4);
         }
+        /* États sélectionnés volontairement distincts et figés (pas dérivés
+           du thème) : "Toutes" neutre sombre, "Activées" reprend la couleur
+           du toggle activé (--ap-accent-blue, cohérence avec .state-toggle.on
+           plutôt qu'une couleur inédite), "Désactivées" reprend le même gris
+           que .state-toggle à l'état off (--ap-accent-grey). */
         .status-chip.active {
-          background: var(--primary-text-color, #212121);
-          color: var(--card-background-color, #fff);
+          background: #212121;
+          border-color: #212121;
+          color: #fff;
           font-weight: 700;
         }
         .status-chip.active[data-value="on"] {
-          background: var(--primary-color, #03a9f4);
+          background: var(--ap-accent-blue, #03a9f4);
+          border-color: var(--ap-accent-blue, #03a9f4);
         }
-        .status-chip[data-value="on"]:not(.active) {
-          border-color: color-mix(in srgb, var(--primary-color, #03a9f4) 45%, white);
+        .status-chip.active[data-value="off"] {
+          background: var(--ap-accent-grey, #8e8e93);
+          border-color: var(--ap-accent-grey, #8e8e93);
+        }
+        /* "Désactivées" au repos : liseré + texte gris (comme le futur fond
+           une fois sélectionné), pas le bleu générique des 2 autres badges. */
+        .status-chip[data-value="off"]:not(.active) {
+          border-color: var(--ap-accent-grey, #8e8e93);
+          color: var(--ap-accent-grey, #8e8e93);
         }
         .chip {
           display: inline-flex;
@@ -1890,8 +2436,8 @@ class AutomationPlusPanel extends HTMLElement {
           background: var(--divider-color, #e0e0e0);
         }
         .chip-reset.active {
-          background: var(--primary-text-color, #212121);
-          color: var(--card-background-color, #fff);
+          background: #212121;
+          color: #fff;
           cursor: default;
         }
         .scroll-area {
@@ -1925,7 +2471,7 @@ class AutomationPlusPanel extends HTMLElement {
           color: var(--secondary-text-color, #666);
         }
         .automation-table {
-          background: var(--card-background-color, #fff);
+          background: var(--ap-surface, var(--card-background-color, #fff));
           border: 1px solid var(--divider-color, #e0e0e0);
           border-radius: 8px;
           overflow: hidden;
@@ -1936,15 +2482,18 @@ class AutomationPlusPanel extends HTMLElement {
           gap: 12px;
           align-items: center;
           padding: 16px;
+          background: var(--ap-surface, var(--card-background-color, #fff));
           border-bottom: 1px solid var(--divider-color, #e0e0e0);
+          cursor: pointer;
         }
         .automation-row:last-child {
           border-bottom: none;
         }
         .automation-row-off {
-          background: var(--secondary-background-color, #f1f3f4);
+          background: var(--ap-off-surface, #e4e4e4);
         }
         .automation-row-header {
+          cursor: default;
           font-size: 11px;
           font-weight: 700;
           letter-spacing: 0.04em;
@@ -2029,7 +2578,9 @@ class AutomationPlusPanel extends HTMLElement {
           height: 24px;
           border-radius: 12px;
           padding: 2px;
-          background: var(--divider-color, #e0e0e0);
+          /* Gris figé (pas var(--divider-color), théme-dépendant) — même
+             valeur que .status-chip.active[data-value="off"]. */
+          background: var(--ap-accent-grey, #8e8e93);
           cursor: pointer;
         }
         .state-toggle.pending {
@@ -2037,7 +2588,7 @@ class AutomationPlusPanel extends HTMLElement {
           pointer-events: none;
         }
         .state-toggle.on {
-          background: var(--primary-color, #03a9f4);
+          background: var(--ap-accent-blue, #03a9f4);
           justify-content: flex-end;
         }
         .state-toggle-knob {
@@ -2075,7 +2626,7 @@ class AutomationPlusPanel extends HTMLElement {
           min-width: 220px;
           max-height: calc(100vh - 16px);
           overflow-y: auto;
-          background: var(--card-background-color, #fff);
+          background: var(--ap-surface, var(--card-background-color, #fff));
           border-radius: 8px;
           box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
           padding: 4px 0;
@@ -2129,7 +2680,7 @@ class AutomationPlusPanel extends HTMLElement {
           box-sizing: border-box;
         }
         .popup-card {
-          background: var(--card-background-color, #fff);
+          background: var(--ap-surface, var(--card-background-color, #fff));
           border-radius: 12px;
           box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2), 0 2px 6px rgba(0, 0, 0, 0.13);
           display: flex;
@@ -2141,7 +2692,7 @@ class AutomationPlusPanel extends HTMLElement {
           max-width: 520px;
         }
         .popup-card.popup-detail {
-          max-width: 490px;
+          max-width: 580px;
         }
         .popup-header {
           padding: 16px 20px;
@@ -2172,7 +2723,7 @@ class AutomationPlusPanel extends HTMLElement {
           height: 28px;
           border-radius: 8px;
           border: 1px solid var(--divider-color, #e0e0e0);
-          background: var(--card-background-color, #fff);
+          background: var(--ap-btn-bg, #fff);
           display: flex;
           align-items: center;
           justify-content: center;
@@ -2217,12 +2768,12 @@ class AutomationPlusPanel extends HTMLElement {
           font-family: inherit;
         }
         .popup-btn-secondary {
-          background: var(--card-background-color, #fff);
+          background: var(--ap-btn-bg, #fff);
           border: 1px solid var(--divider-color, #e0e0e0);
           color: var(--secondary-text-color, #666);
         }
         .popup-btn-primary {
-          background: var(--primary-color, #03a9f4);
+          background: var(--ap-accent-blue, #03a9f4);
           border: none;
           color: #fff;
           font-weight: 700;
@@ -2248,10 +2799,20 @@ class AutomationPlusPanel extends HTMLElement {
           color: var(--secondary-text-color, #666);
           line-height: 1.2;
         }
+        .detail-label-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+        }
+        .detail-id {
+          font-size: 10px;
+          font-weight: 400;
+          color: var(--secondary-text-color, #666);
+        }
         .detail-input,
         .detail-select {
           height: 36px;
-          background: var(--secondary-background-color, #fafafa);
+          background: var(--ap-btn-bg, #fff);
           border-radius: 8px;
           border: 1px solid var(--divider-color, #e0e0e0);
           padding: 0 10px;
@@ -2291,7 +2852,7 @@ class AutomationPlusPanel extends HTMLElement {
           flex-wrap: wrap;
           gap: 6px;
           align-items: center;
-          background: var(--secondary-background-color, #fafafa);
+          background: var(--ap-btn-bg, #fff);
           border: 1px solid var(--divider-color, #e0e0e0);
           border-radius: 8px;
           padding: 6px 8px;
@@ -2319,7 +2880,7 @@ class AutomationPlusPanel extends HTMLElement {
           height: 26px;
           border-radius: 6px;
           border: 1px solid var(--divider-color, #e0e0e0);
-          background: var(--card-background-color, #fff);
+          background: var(--ap-btn-bg, #fff);
           font-size: 11px;
           padding: 0 6px;
           color: var(--secondary-text-color, #666);
@@ -2348,6 +2909,58 @@ class AutomationPlusPanel extends HTMLElement {
           font-size: 11px;
           color: var(--secondary-text-color, #666);
         }
+        .detail-entity-input {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          height: 36px;
+          background: var(--ap-btn-bg, #fff);
+          border-radius: 8px;
+          border: 1px solid var(--divider-color, #e0e0e0);
+          padding: 0 10px;
+          box-sizing: border-box;
+        }
+        .detail-entity-input input {
+          font-family: var(--code-font-family, monospace);
+          font-size: 11px;
+        }
+        .detail-entity-input svg {
+          color: var(--secondary-text-color, #666);
+          flex-shrink: 0;
+        }
+        .detail-regenerate-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          align-self: flex-start;
+          height: 36px;
+          background: var(--ap-btn-bg, #fff);
+          border-radius: 8px;
+          border: 1px solid var(--divider-color, #e0e0e0);
+          padding: 0 12px;
+          font-size: 11px;
+          font-family: inherit;
+          color: var(--secondary-text-color, #666);
+          cursor: pointer;
+        }
+        .detail-regenerate-btn svg {
+          flex-shrink: 0;
+        }
+        .detail-entity-warning {
+          display: flex;
+          align-items: flex-start;
+          gap: 6px;
+        }
+        .detail-entity-warning svg {
+          color: var(--warning-color, #ff9800);
+          flex-shrink: 0;
+          margin-top: 2px;
+        }
+        .detail-entity-warning span {
+          font-size: 11px;
+          line-height: 1.35;
+          color: var(--warning-color, #ff9800);
+        }
         .fab {
           position: fixed;
           right: 32px;
@@ -2356,13 +2969,23 @@ class AutomationPlusPanel extends HTMLElement {
           height: 56px;
           border-radius: 50%;
           border: none;
-          background: var(--primary-color, #03a9f4);
+          background: var(--ap-accent-blue, #03a9f4);
           color: #fff;
-          display: flex;
+          display: none;
           align-items: center;
           justify-content: center;
           cursor: pointer;
           box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+        }
+        /* Le bouton "Nouvelle automatisation" de la toolbar (.new-automation-btn)
+        couvre ce rôle sur desktop/tablette ; le FAB ne réapparaît qu'en
+        largeur smartphone, où la toolbar est trop étroite pour l'accueillir
+        lisiblement — voir claude-integration/RESPONSIVE-SMARTPHONE.md pour
+        la piste générale du chantier responsive. */
+        @media (max-width: 600px) {
+          .fab {
+            display: flex;
+          }
         }
         .toast-container {
           position: fixed;
@@ -2421,7 +3044,7 @@ class AutomationPlusPanel extends HTMLElement {
           gap: 16px;
         }
         .settings-block {
-          background: color-mix(in srgb, var(--card-background-color, #fff) 94%, var(--primary-text-color, #212121) 6%);
+          background: var(--ap-surface, var(--card-background-color, #fff));
           border: 1px solid var(--divider-color, #e0e0e0);
           border-radius: 12px;
           padding: 20px;
@@ -2486,7 +3109,7 @@ class AutomationPlusPanel extends HTMLElement {
           color: var(--secondary-text-color, #666);
         }
         .storage-segment.active {
-          background: var(--card-background-color, #fff);
+          background: var(--ap-btn-bg, #fff);
           color: var(--primary-text-color, #212121);
           font-weight: 700;
           box-shadow: 0 1px 2px rgba(0, 0, 0, 0.13);
@@ -2531,14 +3154,14 @@ class AutomationPlusPanel extends HTMLElement {
           padding: 0 16px;
           border: 1px solid var(--divider-color, #e0e0e0);
           border-radius: 8px;
-          background: var(--card-background-color, #fff);
+          background: var(--ap-btn-bg, #fff);
           color: var(--secondary-text-color, #666);
           font-size: 13px;
           font-family: inherit;
           cursor: pointer;
         }
         .settings-btn:hover:not(.disabled):not(:disabled) {
-          border-color: var(--primary-color, #03a9f4);
+          border-color: var(--ap-accent-blue, #03a9f4);
           color: var(--primary-text-color, #212121);
         }
         .settings-btn.disabled,
@@ -2624,7 +3247,7 @@ class AutomationPlusPanel extends HTMLElement {
           align-items: center;
           gap: 6px;
           font-size: 13px;
-          color: var(--primary-color, #03a9f4);
+          color: var(--ap-accent-blue, #03a9f4);
           text-decoration: none;
         }
         .about-link:hover {
@@ -2639,6 +3262,10 @@ class AutomationPlusPanel extends HTMLElement {
           margin-top: 3px;
         }
       </style>
+      ${
+        this._view === "edition"
+          ? this._renderEditionToolbar()
+          : `
       <div class="header">
         <div class="header-left">
           <button class="icon-button back-btn" title="${this._view === "settings" ? "Retour au Dashboard" : "Retour à Home Assistant"}">
@@ -2659,8 +3286,11 @@ class AutomationPlusPanel extends HTMLElement {
           </button>
         </div>
       </div>
-      ${this._view === "settings" ? this._renderSettingsView() : this._renderDashboardView()}
+      `
+      }
+      ${this._view === "settings" ? this._renderSettingsView() : this._view === "edition" ? this._renderEditionView() : this._renderDashboardView()}
       <div class="toast-container">${this._renderToast()}</div>
+      ${this._editionHelpOpen ? this._renderEditionHelpPopup() : ""}
       ${this._deleteConfirmFor ? this._renderDeleteConfirmPopup() : ""}
       ${this._detailPopupFor ? this._renderAutomationDetailPopup() : ""}
     `;
@@ -2832,6 +3462,19 @@ class AutomationPlusPanel extends HTMLElement {
           const entityId = menuItem.dataset.entityId;
           this._optionsMenuOpenFor = null;
           this._handleOptionsAction(action, entityId);
+          return;
+        }
+        // Le menu Options ouvert (.options-menu, position: fixed) reste un
+        // descendant DOM de .automation-row — exclure toute la zone (pas
+        // seulement .options-menu-item) pour ne pas déclencher l'édition en
+        // cliquant sur son fond/espacement.
+        if (event.target.closest(".options-menu")) return;
+
+        // Clic sur la ligne elle-même (hors toggle État/menu Options déjà
+        // gérés ci-dessus) : ouvre la page Édition de cette automatisation.
+        const row = event.target.closest(".automation-row:not(.automation-row-header)");
+        if (row) {
+          this._openEdition(this._findAutomation(row.dataset.entityId));
         }
       });
     }
@@ -2875,6 +3518,10 @@ class AutomationPlusPanel extends HTMLElement {
             (id) => id !== actionEl.dataset.labelId
           );
           this._render();
+        } else if (action === "regenerate-entity-id") {
+          const slug = this._slugifyName(this._detailDraft.name);
+          this._detailDraft.entityId = `automation.${slug}`;
+          this._render();
         }
       });
       // Champs texte/sélecteurs : mise à jour silencieuse du brouillon (pas
@@ -2913,11 +3560,36 @@ class AutomationPlusPanel extends HTMLElement {
     const backBtn = root.querySelector(".back-btn");
     if (backBtn) {
       backBtn.addEventListener("click", () => {
-        if (this._view === "settings") {
+        if (this._view === "settings" || this._view === "edition") {
           this._view = "dashboard";
           this._render();
         } else {
           history.back();
+        }
+      });
+    }
+
+    const editionTitleBtn = root.querySelector(".edition-title");
+    if (editionTitleBtn) {
+      editionTitleBtn.addEventListener("click", () => {
+        if (this._editionAutomation) this._openDetailPopup(this._editionAutomation);
+      });
+    }
+
+    const editionHelpBtn = root.querySelector(".edition-help-btn");
+    if (editionHelpBtn) {
+      editionHelpBtn.addEventListener("click", () => {
+        this._editionHelpOpen = true;
+        this._render();
+      });
+    }
+
+    const editionHelpPopup = root.querySelector('.popup-overlay[data-popup="edition-help"]');
+    if (editionHelpPopup) {
+      editionHelpPopup.addEventListener("click", (event) => {
+        if (event.target === editionHelpPopup || event.target.closest('[data-action="close-edition-help"]')) {
+          this._editionHelpOpen = false;
+          this._render();
         }
       });
     }

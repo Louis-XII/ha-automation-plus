@@ -58,14 +58,14 @@ Sans date précise — grands axes de développement à venir :
 
 | Item | Progress | Détail |
 |---|---|---|
-| 💻 Édition Code | 🔄 | Édition complète du YAML brut (écriture, annulation/rétablissement) — lecture seule pour l'instant |
-| 🧩 Édition Bloc | ⚪ | Mode d'édition par blocs, à la manière de l'éditeur visuel natif de Home Assistant |
-| 🔀 Édition Graph | ⚪ | Mode d'édition sous forme de graphe visuel (déclencheurs / conditions / actions) |
-| 📁 Mode dossier dédié | 🔄 | Stockage alternatif en un fichier par automatisation, pour les configurations volumineuses |
+| 💻 Édition Code | 🔄 | Mode d'édition du YAML brut |
+| 🧩 Édition Bloc | ⚪ | Mode d'édition par blocs |
+| 🔀 Édition Graph | ⚪ | Mode d'édition sous forme de graphe visuel |
+| 📁 Mode dossier dédié | 🔄 | Stockage alternatif en un fichier *.yaml par automatisation |
 | 🧪 Tests automatisés | ⚪ | Couverture de tests sur l'intégration Python |
-| 🎨 Personnalisation | ⚪ | Options de personnalisation du panel |
+| 🎨 Personnalisation | ⚪ | Options de personnalisations du panel |
 | 🌐 Traductions anglais | ⚪ | Traduction de l'interface en anglais |
-| 📱 Design responsive smartphone | ⚪ | Adaptation de l'interface aux petits écrans |
+| 📱 Design responsive smartphone | ⚪ | Adaptation de l'interface aux petits écrans (smartphone) |
 
 ## Développement
 
